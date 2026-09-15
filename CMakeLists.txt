@@ -1,96 +1,124 @@
-cmake_minimum_required(VERSION 3.18)
-project(BubbleBobble)
+cmake_minimum_required(VERSION 3.24...3.31)
+project(BubbleBobble VERSION 0.1.0 LANGUAGES C)
 
-add_subdirectory(Julgen)
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_C_STANDARD_REQUIRED ON)
+set(CMAKE_C_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
-set(TARGET_NAME BubbleBobble)
-set(SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
+option(BB_BUILD_GAME "Build the raylib desktop game" ON)
+option(BB_WARNINGS_AS_ERRORS "Treat warnings in project C code as errors" ON)
+option(BB_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+include(CTest)
 
+function(bb_configure_c_target target)
+    set_target_properties(${target} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /utf-8)
+        target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
+        if(BB_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE /WX)
+        endif()
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+        if(BB_WARNINGS_AS_ERRORS)
+            target_compile_options(${target} PRIVATE -Werror)
+        endif()
+    endif()
+    if(MINGW)
+        # winpthreads 같은 번들 도구 모음 지원을 포함한다. 시스템 UCRT는 동적으로 유지한다.
+        target_link_options(${target} PRIVATE -static)
+    endif()
+    if(BB_ENABLE_SANITIZERS)
+        if(MSVC OR WIN32)
+            message(FATAL_ERROR "BB_ENABLE_SANITIZERS currently requires Clang or GCC on a Unix host")
+        endif()
+        target_compile_options(${target} PRIVATE -fno-omit-frame-pointer -fsanitize=address,undefined)
+        target_link_options(${target} PRIVATE -fno-omit-frame-pointer -fsanitize=address,undefined)
+    endif()
+endfunction()
 
-# Add all files from game
-set(BB_SOURCE_FILES
-    ${SOURCE_DIR}/Game.cpp                                          ${SOURCE_DIR}/Game.h
-    ${SOURCE_DIR}/GameEntry.cpp
-    ${SOURCE_DIR}/GameScore.h                                       ${SOURCE_DIR}/GameScore.cpp
-    ${SOURCE_DIR}/IBubbleable.h
-    ${SOURCE_DIR}/IDamageable.h
-    ${SOURCE_DIR}/Prefabs.h                                         ${SOURCE_DIR}/Prefabs.cpp
-    ${SOURCE_DIR}/Scenes.h                                          ${SOURCE_DIR}/Scenes.cpp
-
-    # Components/
-    ${SOURCE_DIR}/Components/Boulder.h                              ${SOURCE_DIR}/Components/Boulder.cpp
-    ${SOURCE_DIR}/Components/Health.h                               ${SOURCE_DIR}/Components/Health.cpp
-    ${SOURCE_DIR}/Components/DeadEnemy.h                            ${SOURCE_DIR}/Components/DeadEnemy.cpp
-    ${SOURCE_DIR}/Components/Pickup.h                               ${SOURCE_DIR}/Components/Pickup.cpp
-    ${SOURCE_DIR}/Components/CaptureBubble.h                        ${SOURCE_DIR}/Components/CaptureBubble.cpp
-    ${SOURCE_DIR}/Components/OneWayPlatform.h                       ${SOURCE_DIR}/Components/OneWayPlatform.cpp
-
-    # Components/Character/
-    ${SOURCE_DIR}/Components/Character/Character.h                  ${SOURCE_DIR}/Components/Character/Character.cpp
-    ${SOURCE_DIR}/Components/Character/CharacterInput.h             ${SOURCE_DIR}/Components/Character/CharacterInput.cpp
-
-    # Components/Character/Enemys/
-    ${SOURCE_DIR}/Components/Character/Enemys/Enemy.h               ${SOURCE_DIR}/Components/Character/Enemys/Enemy.cpp
-    ${SOURCE_DIR}/Components/Character/Enemys/Maita.h               ${SOURCE_DIR}/Components/Character/Enemys/Maita.cpp
-    ${SOURCE_DIR}/Components/Character/Enemys/MaitaBehaviour.h      ${SOURCE_DIR}/Components/Character/Enemys/MaitaBehaviour.cpp
-    ${SOURCE_DIR}/Components/Character/Enemys/ZenChan.h             ${SOURCE_DIR}/Components/Character/Enemys/ZenChan.cpp
-    ${SOURCE_DIR}/Components/Character/Enemys/ZenChanBehaviour.h    ${SOURCE_DIR}/Components/Character/Enemys/ZenChanBehaviour.cpp
-
-    # Components/Character/Player/
-    ${SOURCE_DIR}/Components/Character/Player/Player.h              ${SOURCE_DIR}/Components/Character/Player/Player.cpp
-    ${SOURCE_DIR}/Components/Character/Player/PlayerState.h         ${SOURCE_DIR}/Components/Character/Player/PlayerState.cpp
-
-    # Components/Level/
-    ${SOURCE_DIR}/Components/Level/AutoMove.h                       ${SOURCE_DIR}/Components/Level/AutoMove.cpp
-    ${SOURCE_DIR}/Components/Level/AutoRotateAround.h               ${SOURCE_DIR}/Components/Level/AutoRotateAround.cpp
-    ${SOURCE_DIR}/Components/Level/BubbleSpiral.h                   ${SOURCE_DIR}/Components/Level/BubbleSpiral.cpp
-    ${SOURCE_DIR}/Components/Level/LevelState.h                     ${SOURCE_DIR}/Components/Level/LevelState.cpp
-
-    # Components/UI/
-    ${SOURCE_DIR}/Components/UI/FpsCounter.h                        ${SOURCE_DIR}/Components/UI/FpsCounter.cpp
-    ${SOURCE_DIR}/Components/UI/LevelHUD.h                          ${SOURCE_DIR}/Components/UI/LevelHUD.cpp
-    ${SOURCE_DIR}/Components/UI/MainMenu.h                          ${SOURCE_DIR}/Components/UI/MainMenu.cpp
-    ${SOURCE_DIR}/Components/UI/PlayerHUD.h                         ${SOURCE_DIR}/Components/UI/PlayerHUD.cpp
-    ${SOURCE_DIR}/Components/UI/ScoreScreen.h                       ${SOURCE_DIR}/Components/UI/ScoreScreen.cpp
-)
-
-# Adds the source files to the executible
-add_executable(${TARGET_NAME}
-    ${BB_SOURCE_FILES}
-)
-
-# Include source directories
-target_include_directories(${TARGET_NAME} PUBLIC
-    ${SOURCE_DIR}
-    ${SOURCE_DIR}/Components
-    ${SOURCE_DIR}/Components/UI
-    ${SOURCE_DIR}/Components/Level
-    ${SOURCE_DIR}/Components/Character
-    ${SOURCE_DIR}/Components/Character/Player
-    ${SOURCE_DIR}/Components/Character/Enemys
-)
-
-# enable c++20 features
-target_compile_features(${TARGET_NAME} PUBLIC cxx_std_20)
-set_property(TARGET ${TARGET_NAME} PROPERTY
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED TRUE
-    CXX_EXTENSIONS FALSE
-)
-
-# compile at max warning level + treat warnings as errors
-target_compile_options(${TARGET_NAME} PUBLIC
-  $<$<CXX_COMPILER_ID:MSVC>:/W4 /WX /MP>
-  $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-Wall -Wextra -Wpedantic -Werror>
-)
-
-# Visual studio needs to be special
-if(WIN32)
-    # Fix startup project for visual stuidio
-    set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT ${TARGET_NAME})
-    # Fix working directory for visual studio
-    set_target_properties(${TARGET_NAME} PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:${TARGET_NAME}>")
+add_library(bb_core STATIC src/bb_game.c)
+target_include_directories(bb_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+bb_configure_c_target(bb_core)
+if(NOT MSVC)
+    target_link_libraries(bb_core PUBLIC m)
 endif()
 
+if(BUILD_TESTING)
+    add_executable(bb_game_tests tests/test_game.c)
+    target_link_libraries(bb_game_tests PRIVATE bb_core)
+    bb_configure_c_target(bb_game_tests)
+    add_executable(bb_platform_tests tests/test_platform.c src/bb_platform.c)
+    target_include_directories(bb_platform_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    bb_configure_c_target(bb_platform_tests)
+    if(WIN32)
+        target_link_libraries(bb_platform_tests PRIVATE shell32)
+    endif()
+    if(UNIX AND NOT APPLE)
+        target_compile_definitions(bb_platform_tests PRIVATE _POSIX_C_SOURCE=200809L)
+    endif()
+    # 테스트는 Release 구성에서도 assertion을 활성화한 채 유지해야 한다.
+    foreach(test_target bb_game_tests bb_platform_tests)
+        if(MSVC)
+            target_compile_options(${test_target} PRIVATE /UNDEBUG)
+        else()
+            target_compile_options(${test_target} PRIVATE -UNDEBUG)
+        endif()
+    endforeach()
+    add_test(NAME gameplay COMMAND bb_game_tests)
+    add_test(NAME platform COMMAND bb_platform_tests "${CMAKE_CURRENT_BINARY_DIR}/platform-test-scores.txt")
+    add_test(NAME pure_c_sources COMMAND "${CMAKE_COMMAND}"
+        "-DBB_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/AuditPureC.cmake")
+endif()
 
-target_link_libraries(${TARGET_NAME} PRIVATE julgen)
+if(BB_BUILD_GAME)
+    include(FetchContent)
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static dependencies" FORCE)
+    set(BUILD_EXAMPLES OFF CACHE BOOL "Disable raylib examples" FORCE)
+    set(BUILD_GAMES OFF CACHE BOOL "Disable raylib games" FORCE)
+    set(PLATFORM Desktop CACHE STRING "raylib backend" FORCE)
+    set(USE_EXTERNAL_GLFW OFF CACHE STRING "Use pinned GLFW shipped with raylib" FORCE)
+    if(UNIX AND NOT APPLE)
+        set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "Use X11 on Linux" FORCE)
+        set(GLFW_BUILD_X11 ON CACHE BOOL "Use X11 on Linux" FORCE)
+    endif()
+    # raylib 5.5는 C인데 한정하지 않은 루트 project()가 불필요하게 CXX를 활성화한다.
+    # 구성 전에 정확하고 여러 번 적용해도 같은 결과인 CMake 전용 패치를 적용한다.
+    FetchContent_Declare(raylib
+        URL https://codeload.github.com/raysan5/raylib/tar.gz/refs/tags/5.5
+        URL_HASH SHA256=aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        PATCH_COMMAND "${CMAKE_COMMAND}" "-DRAYLIB_SOURCE_DIR=<SOURCE_DIR>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/PureCRaylib.cmake")
+    FetchContent_MakeAvailable(raylib)
+    set_property(DIRECTORY "${raylib_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL TRUE)
+
+    add_executable(BubbleBobble src/main.c src/bb_render.c src/bb_platform.c src/bb_collision_raylib.c)
+    target_link_libraries(BubbleBobble PRIVATE bb_core raylib)
+    bb_configure_c_target(BubbleBobble)
+    if(UNIX AND NOT APPLE)
+        target_compile_definitions(BubbleBobble PRIVATE _POSIX_C_SOURCE=200809L)
+    endif()
+    set_target_properties(BubbleBobble PROPERTIES
+        VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:BubbleBobble>")
+    if(WIN32)
+        set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT BubbleBobble)
+        target_link_libraries(BubbleBobble PRIVATE shell32)
+    endif()
+    # 소스를 다시 컴파일하지 않아도 ALL은 변경된 에셋을 복사한다.
+    add_custom_target(bb_assets ALL
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory
+            "${CMAKE_CURRENT_SOURCE_DIR}/Assets" "$<TARGET_FILE_DIR:BubbleBobble>/assets"
+        COMMENT "Copying original game assets" VERBATIM)
+    add_dependencies(BubbleBobble bb_assets)
+    install(TARGETS BubbleBobble RUNTIME DESTINATION bin)
+    install(DIRECTORY Assets/ DESTINATION bin/assets)
+endif()
+
+get_property(bb_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
+if("CXX" IN_LIST bb_languages OR "OBJCXX" IN_LIST bb_languages)
+    message(FATAL_ERROR "The pure C build must not enable C++ or Objective-C++")
+endif()

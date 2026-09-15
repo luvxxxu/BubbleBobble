@@ -1,0 +1,54 @@
+name: C11 builds and gameplay tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            preset: windows-x86
+          - os: windows-2022
+            preset: windows-x64
+          - os: macos-15
+            preset: macos-arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure C-only desktop build
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Gameplay and source-language tests
+        run: ctest --preset ${{ matrix.preset }}
+      - name: Package executable and assets
+        run: cmake --install build/${{ matrix.preset }} --config Release --prefix build/package/${{ matrix.preset }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BubbleBobble-${{ matrix.preset }}
+          path: build/package/${{ matrix.preset }}/
+          if-no-files-found: error
+
+  portable-core:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        cc: [gcc, clang]
+    env:
+      CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure dependency-free C11 gameplay tests
+        run: cmake --preset sanitizers
+      - name: Build
+        run: cmake --build --preset sanitizers
+      - name: Run with address and undefined-behavior sanitizers
+        run: ctest --preset sanitizers

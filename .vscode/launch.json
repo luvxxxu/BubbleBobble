@@ -1,0 +1,17 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "BubbleBobble (macOS arm64)",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/macos-arm64/bin/BubbleBobble",
+            "args": [],
+            "cwd": "${workspaceFolder}/build/macos-arm64/bin",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "MIMode": "lldb",
+            "preLaunchTask": "CMake: BubbleBobble 빌드"
+        }
+    ]
+}

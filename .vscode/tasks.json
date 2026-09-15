@@ -1,0 +1,55 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "CMake: macOS arm64 구성",
+            "type": "process",
+            "command": "${workspaceFolder}/scripts/cmake.sh",
+            "args": [
+                "--preset",
+                "macos-arm64"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$gcc"
+        },
+        {
+            "label": "CMake: BubbleBobble 빌드",
+            "type": "process",
+            "command": "${workspaceFolder}/scripts/cmake.sh",
+            "args": [
+                "--build",
+                "--preset",
+                "macos-arm64"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "CMake: macOS arm64 구성",
+            "dependsOrder": "sequence",
+            "problemMatcher": "$gcc",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "C/C++: clang build active file",
+            "type": "process",
+            "command": "${workspaceFolder}/scripts/cmake.sh",
+            "args": [
+                "--build",
+                "--preset",
+                "macos-arm64"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "CMake: macOS arm64 구성",
+            "dependsOrder": "sequence",
+            "problemMatcher": "$gcc",
+            "detail": "개별 C 파일 대신 전체 CMake 프로젝트를 빌드합니다."
+        }
+    ]
+}
