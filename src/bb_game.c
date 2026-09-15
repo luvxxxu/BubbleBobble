@@ -115,7 +115,9 @@ static unsigned move_body(const BBGame *game, BBBody *body, float hw, float hh,
 
 static void place_player(BBPlayer *player, int index)
 {
-    player->body = (BBBody){ .x = index == 0 ? 4.0f : 28.0f, .y = 24.0f };
+    memset(&player->body, 0, sizeof player->body);
+    player->body.x = index == 0 ? 4.0f : 28.0f;
+    player->body.y = 24.0f;
     player->state = BB_PLAYER_NORMAL;
     player->facing = index == 0 ? 1 : -1;
     player->falling = true;
@@ -128,12 +130,15 @@ static void place_player(BBPlayer *player, int index)
 static void spawn_enemy(BBGame *game, int index, BBEnemyType type, float x, float y, float delay, bool controlled)
 {
     BBEnemy *enemy = &game->enemies[index];
-    *enemy = (BBEnemy){
-        .body = { .x = x, .y = 0.0f }, .type = type,
-        .state = BB_ENEMY_SPAWNING, .active = true,
-        .controlled = controlled, .facing = random_unit(game) < 0.5f ? -1 : 1,
-        .spawn_delay = delay, .spawn_y = y
-    };
+    memset(enemy, 0, sizeof *enemy);
+    enemy->body.x = x;
+    enemy->type = type;
+    enemy->state = BB_ENEMY_SPAWNING;
+    enemy->active = true;
+    enemy->controlled = controlled;
+    enemy->facing = random_unit(game) < 0.5f ? -1 : 1;
+    enemy->spawn_delay = delay;
+    enemy->spawn_y = y;
 }
 
 static void enter_level(BBGame *game, int level)
@@ -191,7 +196,7 @@ void bb_game_init(BBGame *game, const uint8_t *tiles, uint32_t seed)
     memset(game, 0, sizeof *game);
     if(tiles != NULL)
         memcpy(game->maps, tiles, sizeof game->maps);
-    game->rng = seed != 0 ? seed : UINT32_C(0xB0BB1E);
+    game->rng = seed != 0 ? seed : 0xB0BB1EU;
     game->state = BB_STATE_MENU;
 }
 
@@ -291,8 +296,13 @@ static void fire_bubble(BBGame *game, BBPlayer *player, int owner)
                 break;
             }
         }
-        *bubble = (BBBubble){ .body = { .x = clamp(x, 0.75f, 31.25f), .y = y, .vx = speed },
-                              .active = true, .owner = owner, .captured_enemy = -1 };
+        memset(bubble, 0, sizeof *bubble);
+        bubble->body.x = clamp(x, 0.75f, 31.25f);
+        bubble->body.y = y;
+        bubble->body.vx = speed;
+        bubble->active = true;
+        bubble->owner = owner;
+        bubble->captured_enemy = -1;
         player->fire_cooldown = 0.4f;
         player->attack_timer = 0.2f;
         game->events |= BB_EVENT_FIRE;
@@ -405,11 +415,12 @@ static void throw_boulder(BBGame *game, BBEnemy *enemy)
         if(boulder->active)
             continue;
         float angle = random_unit(game) - 0.5f;
-        *boulder = (BBBoulder){
-            .body = { .x = enemy->body.x, .y = enemy->body.y,
-                      .vx = cosf(angle) * 15.0f * (float)enemy->facing,
-                      .vy = sinf(angle) * 15.0f }, .active = true
-        };
+        memset(boulder, 0, sizeof *boulder);
+        boulder->body.x = enemy->body.x;
+        boulder->body.y = enemy->body.y;
+        boulder->body.vx = cosf(angle) * 15.0f * (float)enemy->facing;
+        boulder->body.vy = sinf(angle) * 15.0f;
+        boulder->active = true;
         enemy->throw_timer = 0.0f;
         return;
     }
@@ -421,8 +432,10 @@ static void spawn_pickup(BBGame *game, const BBEnemy *enemy)
     {
         if(game->pickups[i].active)
             continue;
-        game->pickups[i] = (BBPickup){ .body = enemy->body, .active = true,
-            .type = enemy->type == BB_ENEMY_ZENCHAN ? BB_PICKUP_WATERMELON : BB_PICKUP_FRIES };
+        memset(&game->pickups[i], 0, sizeof game->pickups[i]);
+        game->pickups[i].body = enemy->body;
+        game->pickups[i].active = true;
+        game->pickups[i].type = enemy->type == BB_ENEMY_ZENCHAN ? BB_PICKUP_WATERMELON : BB_PICKUP_FRIES;
         game->pickups[i].body.vx = 0.0f;
         game->pickups[i].body.vy = 9.0f;
         return;

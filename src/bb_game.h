@@ -2,7 +2,6 @@
 #define BB_GAME_H
 
 #include "bb_compat.h"
-#include <stdint.h>
 
 #define BB_MAP_WIDTH 32
 #define BB_MAP_HEIGHT 28

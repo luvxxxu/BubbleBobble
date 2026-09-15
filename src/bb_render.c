@@ -1,4 +1,5 @@
 #include "bb_render.h"
+#include "bb_raylib_types.h"
 
 #include <limits.h>
 #include <math.h>
@@ -80,7 +81,7 @@ bool bb_assets_validate(const char *directory, uint8_t *maps)
 static Texture2D texture(const char *directory, const char *name)
 {
     char path[BB_PATH_CAP];
-    if (!path_for(path, directory, name)) return (Texture2D){0};
+    if (!path_for(path, directory, name)) return bb_empty_texture();
     Texture2D result = LoadTexture(path);
     if (result.id) SetTextureFilter(result, TEXTURE_FILTER_POINT);
     return result;
@@ -89,7 +90,7 @@ static Texture2D texture(const char *directory, const char *name)
 static Sound sound(const char *directory, const char *name)
 {
     char path[BB_PATH_CAP];
-    if (!path_for(path, directory, name)) return (Sound){0};
+    if (!path_for(path, directory, name)) return bb_empty_sound();
     return LoadSound(path);
 }
 
@@ -151,7 +152,7 @@ void bb_audio_events(const BBAssets *a, uint32_t events)
 
 static void text(const BBAssets *a, const char *value, float x, float y, Color color)
 {
-    DrawTextEx(a->font, value, (Vector2){x, y}, 8, 0, color);
+    DrawTextEx(a->font, value, bb_vector2(x, y), 8, 0, color);
 }
 
 static void centered(const BBAssets *a, const char *value, float y, Color color)
@@ -164,7 +165,7 @@ static void sprite(Texture2D sheet, int column, int row, int size, float x, floa
 {
     Rectangle source = {(float)(column * size), (float)(row * size), (float)(flip ? -size : size), (float)size};
     Rectangle destination = {roundf(x * 8 - (float)size / 2), roundf(y * 8 - (float)size / 2), (float)size, (float)size};
-    DrawTexturePro(sheet, source, destination, (Vector2){0, 0}, 0, WHITE);
+    DrawTexturePro(sheet, source, destination, bb_vector2(0, 0), 0, WHITE);
 }
 
 static void leaderboard(const BBAssets *a, const BBUI *ui, float top, size_t maximum)
@@ -222,7 +223,7 @@ void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
         for (int y = 0; y < BB_MAP_HEIGHT; ++y)
             for (int x = 0; x < BB_MAP_WIDTH; ++x)
                 if (g->maps[g->level][y][x])
-                    DrawTextureRec(a->tiles, (Rectangle){0, (float)(g->level * 8), 8, 8}, (Vector2){(float)(x * 8), (float)(y * 8)}, WHITE);
+                    DrawTextureRec(a->tiles, bb_rectangle(0, (float)(g->level * 8), 8, 8), bb_vector2((float)(x * 8), (float)(y * 8)), WHITE);
     }
     int enemy_frame = (int)(g->level_time * 4) % 2;
     for (int i = 0; i < BB_MAX_ENEMIES; ++i) {

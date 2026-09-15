@@ -78,12 +78,14 @@ void bb_platform_free_arguments(BBArguments *arguments)
         for (int i = 0; i < arguments->count; ++i) free(arguments->values[i]);
         free(arguments->values);
     }
-    *arguments = (BBArguments){0};
+    memset(arguments, 0, sizeof *arguments);
 }
 
 bool bb_platform_arguments(int argc, char **argv, BBArguments *out)
 {
-    *out = (BBArguments){argc, argv, false};
+    out->count = argc;
+    out->values = argv;
+    out->owned = false;
 #if defined(_WIN32)
     int count = 0;
     wchar_t **wide = CommandLineToArgvW(GetCommandLineW(), &count);

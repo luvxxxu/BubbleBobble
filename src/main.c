@@ -2,6 +2,7 @@
 #include "bb_collision_raylib.h"
 #include "bb_platform.h"
 #include "bb_render.h"
+#include "bb_raylib_types.h"
 
 #include <errno.h>
 #include <math.h>
@@ -297,10 +298,10 @@ static int run_game(int argc, char **argv)
         if (scale >= 1) scale = floorf(scale);
         float width = BB_SCREEN_WIDTH * scale, height = BB_SCREEN_HEIGHT * scale;
         BeginDrawing();
-        ClearBackground((Color){12, 12, 12, 255});
-        DrawTexturePro(canvas.texture, (Rectangle){0, 0, BB_SCREEN_WIDTH, -BB_SCREEN_HEIGHT},
-                       (Rectangle){((float)GetScreenWidth() - width) / 2, ((float)GetScreenHeight() - height) / 2, width, height},
-                       (Vector2){0, 0}, 0, WHITE);
+        ClearBackground(bb_color(12, 12, 12, 255));
+        DrawTexturePro(canvas.texture, bb_rectangle(0, 0, BB_SCREEN_WIDTH, -BB_SCREEN_HEIGHT),
+                       bb_rectangle(((float)GetScreenWidth() - width) / 2, ((float)GetScreenHeight() - height) / 2, width, height),
+                       bb_vector2(0, 0), 0, WHITE);
         EndDrawing();
         ++frames;
         if (smoke_frames && frames >= smoke_frames) {
