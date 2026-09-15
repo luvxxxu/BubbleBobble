@@ -1,7 +1,7 @@
 #ifndef BB_GAME_H
 #define BB_GAME_H
 
-#include <stdbool.h>
+#include "bb_compat.h"
 #include <stdint.h>
 
 #define BB_MAP_WIDTH 32

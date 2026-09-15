@@ -1,6 +1,5 @@
 {
     "cmake.useCMakePresets": "always",
-    "cmake.cmakePath": "${workspaceFolder}/scripts/cmake.sh",
     "cmake.configurePreset": "macos-arm64",
     "cmake.buildPreset": "macos-arm64",
     "cmake.configureOnOpen": false,
