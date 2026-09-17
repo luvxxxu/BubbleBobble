@@ -330,9 +330,9 @@ void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
         for (i = 0; i < BB_MAX_PLAYERS; ++i) {
             if (!g->players[i].active) continue;
             snprintf(label, sizeof label, "%dUP %06d", i + 1, g->players[i].score < 0 ? 0 : g->players[i].score);
-            text(a, label, i == 0 ? 8 : 152, 2, i == 0 ? p1_color : p2_color);
+            text(a, label, i == 0 ? 8.0f : 152.0f, 2.0f, i == 0 ? p1_color : p2_color);
             snprintf(label, sizeof label, "LIVES %d", g->players[i].lives < 0 ? 0 : g->players[i].lives);
-            text(a, label, i == 0 ? 8 : 184, 214, i == 0 ? p1_color : p2_color);
+            text(a, label, i == 0 ? 8.0f : 184.0f, 214.0f, i == 0 ? p1_color : p2_color);
         }
         snprintf(round, sizeof round, "ROUND %d", g->level + 1);
         centered(a, round, 214, WHITE);

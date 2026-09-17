@@ -236,7 +236,7 @@ static int run_game(int argc, char **argv)
     InitAudioDevice();
     audio_ready = IsAudioDeviceReady();
     if (!audio_ready) fprintf(stderr, "Audio device unavailable; continuing without sound.\n");
-    if (audio_ready) SetMasterVolume(muted ? 0 : 1);
+    if (audio_ready) SetMasterVolume(muted ? 0.0f : 1.0f);
     if (!bb_assets_load(&assets, asset_directory, audio_ready)) {
         fprintf(stderr, "Could not load game resources.\n");
         bb_assets_unload(&assets);
@@ -262,7 +262,7 @@ static int run_game(int argc, char **argv)
         up = key_pressed(KEY_UP) || key_pressed(KEY_W) || pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP);
         down = key_pressed(KEY_DOWN) || key_pressed(KEY_S) || pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
         if (key_pressed(KEY_F11)) ToggleFullscreen();
-        if (key_pressed(KEY_M)) { ui.muted = !ui.muted; if (audio_ready) SetMasterVolume(ui.muted ? 0 : 1); }
+        if (key_pressed(KEY_M)) { ui.muted = !ui.muted; if (audio_ready) SetMasterVolume(ui.muted ? 0.0f : 1.0f); }
         if (key_pressed(KEY_ESCAPE)) {
             if (game.state == BB_STATE_MENU) break;
             bb_game_menu(&game); ui.paused = false; accumulator = 0;

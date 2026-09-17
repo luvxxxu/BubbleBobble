@@ -10,15 +10,12 @@
 #endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
-#pragma warning(push, 0)
+/* C4701 is a false positive in stb_vorbis' bounded seek interpolation. */
+#pragma warning(disable : 4701)
 #endif
 
 #define STB_VORBIS_NO_STDIO
 #include "third_party/stb_vorbis.c"
-
-#if defined(_MSC_VER) && !defined(__clang__)
-#pragma warning(pop)
-#endif
 
 #if defined(__clang__)
 #pragma clang diagnostic pop
