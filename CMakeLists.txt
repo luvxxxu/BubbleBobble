@@ -65,6 +65,16 @@ if(BUILD_TESTING)
     add_executable(bb_platform_tests tests/test_platform.c src/bb_platform.c)
     target_include_directories(bb_platform_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     bb_configure_c_target(bb_platform_tests)
+    add_executable(bb_audio_decode_tests
+        tests/test_audio_decode.c
+        legacy/vs2010/bb_audio_decode.c
+        legacy/vs2010/stb_vorbis_impl.c)
+    target_include_directories(bb_audio_decode_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src"
+        "${CMAKE_CURRENT_SOURCE_DIR}/legacy/vs2010")
+    target_compile_definitions(bb_audio_decode_tests PRIVATE
+        "BB_TEST_ASSET_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/Assets\"")
+    bb_configure_c_target(bb_audio_decode_tests)
     if(WIN32)
         target_link_libraries(bb_platform_tests PRIVATE shell32)
     endif()
@@ -72,7 +82,7 @@ if(BUILD_TESTING)
         target_compile_definitions(bb_platform_tests PRIVATE _POSIX_C_SOURCE=200809L)
     endif()
     # 테스트는 Release 구성에서도 assertion을 활성화한 채 유지해야 한다.
-    foreach(test_target bb_game_tests bb_platform_tests)
+    foreach(test_target bb_game_tests bb_platform_tests bb_audio_decode_tests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE /UNDEBUG)
         else()
@@ -81,6 +91,7 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME gameplay COMMAND bb_game_tests)
     add_test(NAME platform COMMAND bb_platform_tests "${CMAKE_CURRENT_BINARY_DIR}/platform-test-scores.txt")
+    add_test(NAME legacy_audio_decode COMMAND bb_audio_decode_tests)
     add_test(NAME pure_c_sources COMMAND "${CMAKE_COMMAND}"
         "-DBB_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/AuditPureC.cmake")

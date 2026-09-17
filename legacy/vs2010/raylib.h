@@ -13,8 +13,8 @@ typedef struct RenderTexture { unsigned int id; Texture texture, depth; } Render
 typedef RenderTexture RenderTexture2D;
 typedef struct Font { int baseSize, glyphCount, glyphPadding; Texture2D texture; Rectangle *recs; void *glyphs; } Font;
 typedef struct Wave { void *data; unsigned int frameCount, sampleRate, sampleSize, channels; } Wave;
-typedef struct Sound { unsigned int frameCount; } Sound;
-typedef struct Music { bool looping; } Music;
+typedef struct Sound { unsigned int frameCount, id, generation; } Sound;
+typedef struct Music { bool looping; unsigned int id, generation; } Music;
 typedef unsigned char *(*LoadFileDataCallback)(const char *fileName, int *dataSize);
 
 extern const Color WHITE;

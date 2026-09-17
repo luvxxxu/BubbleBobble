@@ -2,7 +2,7 @@
 
 ## 완료한 범위
 
-업스트림 `6a59ee99e621f4061cab50802155b9c28c51c4f9`에는 C++ Julgen 엔진에 연결된 약 4,056줄의 C++ 구현과 헤더가 있었습니다. 실행 C++ 소스와 서브모듈은 제거했습니다. 애플리케이션 C 번역 단위 4개가 플레이 가능한 초기 포트를 제공하고, C 파일 2개가 테스트를 구현합니다. 원본 코드는 실행 소스에 포함하거나 배포하지 않으며 Git 기록에서 복구할 수 있습니다.
+업스트림 `6a59ee99e621f4061cab50802155b9c28c51c4f9`에는 C++ Julgen 엔진에 연결된 약 4,056줄의 C++ 구현과 헤더가 있었습니다. 실행 C++ 소스와 서브모듈은 제거했습니다. 애플리케이션 C 번역 단위가 플레이 가능한 초기 포트를 제공하고, C 파일 3개가 게임플레이·플랫폼·레거시 오디오 디코더를 검사합니다. 원본 코드는 실행 소스에 포함하거나 배포하지 않으며 Git 기록에서 복구할 수 있습니다.
 
 게임 루프와 원본 스테이지 3개를 1인, 협동, 대전 모드로 구현했습니다. 에셋 파일 40개는 업스트림과 정확히 같습니다. 원본 게임플레이 상수와 알려진 업스트림 결함은 [UPSTREAM_BEHAVIOR.md](UPSTREAM_BEHAVIOR.md)에 기록했습니다.
 
@@ -10,17 +10,17 @@
 
 | 대상 또는 검사 | 결과 | 한계 |
 |---|---|---|
-| macOS arm64, Apple Clang 21, CMake 3.31.6 | Release 게임과 테스트 실행 파일 2개를 빌드하고 `.app`을 조립·실행 | Apple Silicon macOS 27.0에서 검사. macOS 11 배포 대상을 선택했지만 macOS 11 자체에서는 실행하지 않음 |
-| macOS native CTest | 게임플레이, 플랫폼, 순수 C 소스 검사 3/3 통과 | 업스트림 물리와의 완전한 동일성은 증명하지 않음 |
-| AddressSanitizer + UndefinedBehaviorSanitizer | 보고된 실패 없이 3/3 통과 | 게임 코어·플랫폼 테스트에 적용. raylib/OS 그래픽·오디오는 전체 sanitizer 계측하지 않음 |
+| macOS arm64, Apple Clang 21, CMake 3.31.6 | Release 게임과 테스트 실행 파일 3개를 빌드하고 `.app`을 조립·실행 | Apple Silicon macOS 27.0에서 검사. macOS 11 배포 대상을 선택했지만 macOS 11 자체에서는 실행하지 않음 |
+| macOS native CTest | 게임플레이, 플랫폼, 레거시 오디오 디코더, 순수 C 소스 검사 4/4 통과 | 업스트림 물리와의 완전한 동일성은 증명하지 않음 |
+| AddressSanitizer + UndefinedBehaviorSanitizer | 보고된 실패 없이 4/4 통과 | 게임 코어·플랫폼·WAV/OGG 디코더에 적용. raylib/OS 그래픽과 실제 장치 출력은 전체 sanitizer 계측하지 않음 |
 | 게임플레이 회귀 실행 파일 | 결정적인 스트레스 틱 60,000개를 포함한 1,755,891개 검사 | 스트레스는 포획 감시 적을 둔 합성 1인 픽스처를 사용. 다른 모드·진행·공격은 별도 테스트 |
 | 원본 에셋 | 맵 3개, 스프라이트 이미지 8개, 글꼴, WAV 효과음 3개, OGG 음악 검증. 파일 40개 모두 바이트 단위 동일 | 초기 프런트엔드가 실제 사용하는 에셋만 시작 시 디코드 |
 | 네이티브 게임플레이 스모크 | 렌더링 360프레임 / 시뮬레이션 720틱 완료, 스크린샷 저장 | 스테이지 1의 스크립트 협동 시퀀스이며 사람의 전체 플레이는 아님 |
 | 네이티브 UI | 실제 창 입력으로 메뉴 선택, 협동 시작, 인트로 건너뛰기, 거품 발사, 일시 정지, 메뉴 복귀, 순위표 확인. 대전 모드 열기 | 물리 게임패드 테스트와 전체 사람 플레이는 남음 |
-| Windows x86 | 게임과 테스트 EXE 2개 교차 컴파일 성공, PE32 Intel 80386 | 로컬에서 Windows 실행과 MSVC 컴파일러 실행 불가 |
-| Windows x64 / AMD64 | 게임과 테스트 EXE 2개 교차 컴파일 성공, PE32+ x86-64 | 로컬에서 Windows 실행과 MSVC 컴파일러 실행 불가 |
-| 언어·런타임 감사 | Windows는 CXX 구성 없이 `.c` 단위 35개를 컴파일하고 실행 파일은 Windows 시스템 라이브러리/UCRT만 가져옴. macOS는 C·시스템 프레임워크·Objective-C 런타임을 링크하며 애플리케이션 C++ 런타임은 없음 | Cocoa와 다른 운영체제 내부 구현은 애플리케이션 소스 범위 밖 |
-| GitHub Actions | Windows x86/x64 MSVC, macOS arm64, Linux GCC/Clang 워크플로 추가 | 이 작업 중 원격에 푸시하거나 실행하지 않음 |
+| Windows x86 | 게임과 테스트 EXE 3개 교차 컴파일 성공, PE32 Intel 80386 | 로컬에서 Windows 실행과 MSVC 컴파일러 실행 불가 |
+| Windows x64 / AMD64 | 게임과 테스트 EXE 3개 교차 컴파일 성공, PE32+ x86-64 | 로컬에서 Windows 실행과 MSVC 컴파일러 실행 불가 |
+| 언어·런타임 감사 | Windows는 CXX 구성 없이 C 번역 단위만 컴파일하고 실행 파일은 Windows 시스템 라이브러리/UCRT만 가져옴. macOS는 C·시스템 프레임워크·Objective-C 런타임을 링크하며 애플리케이션 C++ 런타임은 없음 | Cocoa와 다른 운영체제 내부 구현은 애플리케이션 소스 범위 밖 |
+| GitHub Actions | Windows x86/x64 MSVC, macOS arm64, Linux GCC/Clang 워크플로 추가 | 실행 결과는 각 커밋의 원격 Actions 기록에서 확인 |
 
 Windows 바이너리는 LLVM-MinGW `20260908`, Clang 23, UCRT로 빌드했습니다. 애플리케이션이나 의존성 구성에서 C++ 컴파일러를 선택하지 않습니다. Raylib는 정적입니다. macOS의 의존성·애플리케이션 컴파일 단위 37개에는 Cocoa용 Objective-C `.m` 파일 5개가 포함되며 `.cpp`나 `.mm` 입력은 없습니다.
 
@@ -60,7 +60,7 @@ Windows 바이너리는 LLVM-MinGW `20260908`, Clang 23, UCRT로 빌드했습니
 | C++ Box2D 통합 | `bb_game.c`의 C 타일/AABB 해석기 |
 | GLM / STL 컨테이너 / 스마트 포인터 / RTTI | 스칼라 C 수학, 고정 풀, 명시적 상태 |
 | fmt / filesystem / fstream | 크기 제한 `snprintf`, C 파일 I/O, 작은 플랫폼 경로 함수 |
-| SDL2 / SDL_image / SDL_ttf / SoLoud | 번들 GLFW, stb 디코더/글꼴 로더, miniaudio를 포함한 정적 raylib |
+| SDL2 / SDL_image / SDL_ttf / SoLoud | 최신 빌드는 번들 GLFW·stb·miniaudio를 포함한 정적 raylib, VS2010 빌드는 Win32/GDI+·`waveOut`·stb_vorbis |
 | ImGui, 선택 사항인 VLD와 Steamworks | 요청한 데스크톱 게임 빌드에서 제거 |
 
 기존 Emscripten 웹 대상은 유지하지 않았습니다. 이는 요청한 Windows/macOS 대상 범위 밖입니다.

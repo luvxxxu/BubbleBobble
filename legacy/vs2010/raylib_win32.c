@@ -1373,31 +1373,3 @@ Vector2 MeasureTextEx(Font font, const char *text, float fontSize, float spacing
     free(wide_text);
     return value;
 }
-
-void InitAudioDevice(void) { }
-void CloseAudioDevice(void) { }
-bool IsAudioDeviceReady(void) { return false; }
-void SetMasterVolume(float volume) { (void)volume; }
-
-Wave LoadWave(const char *fileName)
-{
-    Wave wave;
-    memset(&wave, 0, sizeof wave);
-    /* Validation only needs to prove that the UTF-8 asset is readable. */
-    if (!bb_asset_exists(fileName)) return wave;
-    wave.data = malloc(1);
-    return wave;
-}
-
-bool IsWaveValid(Wave wave) { return wave.data != NULL; }
-void UnloadWave(Wave wave) { free(wave.data); }
-Sound LoadSound(const char *fileName) { Sound sound; (void)fileName; sound.frameCount = 0; return sound; }
-bool IsSoundValid(Sound sound) { return sound.frameCount != 0; }
-void UnloadSound(Sound sound) { (void)sound; }
-void PlaySound(Sound sound) { (void)sound; }
-Music LoadMusicStreamFromMemory(const char *fileType, const unsigned char *data, int dataSize) { Music music; (void)fileType; (void)data; (void)dataSize; music.looping = false; return music; }
-bool IsMusicValid(Music music) { (void)music; return false; }
-void UnloadMusicStream(Music music) { (void)music; }
-void PlayMusicStream(Music music) { (void)music; }
-void UpdateMusicStream(Music music) { (void)music; }
-void SetMusicVolume(Music music, float volume) { (void)music; (void)volume; }

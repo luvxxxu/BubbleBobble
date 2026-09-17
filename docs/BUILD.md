@@ -36,7 +36,7 @@ C 컴파일러와 Windows SDK를 제공하는 **Desktop development with C++** �
 
 VS2010 SP1과 해당 x86/x64 C 도구, Windows SDK를 설치한 뒤 [legacy/vs2010/BubbleBobble.sln](../legacy/vs2010/BubbleBobble.sln)을 엽니다. 구성 관리자에서 `Release | Win32` 또는 `Release | x64`를 선택하고 빌드하세요. 결과물은 각각 `legacy/vs2010/build/Win32/Release/BubbleBobble.exe` 및 `legacy/vs2010/build/x64/Release/BubbleBobble.exe`에 생성되며, 빌드 후 이벤트가 `assets`를 자동으로 복사합니다. Release 구성은 CRT를 정적으로 링크합니다. 실행 파일만 따로 옮기지 말고 `assets` 디렉터리를 함께 유지해야 합니다.
 
-VS2010 경로는 오래된 C 컴파일러용 Win32/GDI+ 렌더러이므로 키보드 입력, 그래픽, UTF-8 경로의 에셋과 점수 저장을 지원합니다. 오디오·게임패드·스크린샷까지 포함한 전체 raylib 프런트엔드는 위의 Visual Studio 2022 CMake 경로를 사용하세요.
+VS2010 경로는 오래된 C 컴파일러용 Win32/GDI+ 렌더러이며 키보드 입력, 그래픽, UTF-8 경로의 에셋과 점수 저장을 지원합니다. 효과음과 반복 배경음은 Windows 기본 `waveOut` 장치와 정적으로 포함한 Ogg Vorbis 디코더를 사용하므로 별도 DirectX 또는 오디오 런타임 설치가 필요하지 않습니다. 게임패드와 스크린샷까지 포함한 전체 raylib 프런트엔드는 위의 Visual Studio 2022 CMake 경로를 사용하세요.
 
 ## macOS 또는 Linux에서 Windows 교차 컴파일
 
@@ -52,7 +52,7 @@ cmake --build --preset windows-cross-x64
 cmake --install build/windows-cross-x64 --prefix build/package/windows-cross-x64
 ```
 
-교차 빌드는 게임플레이·플랫폼 테스트 실행 파일과 게임을 모두 컴파일하지만 빌드 호스트에서 Windows 바이너리를 실행하지는 않습니다. Windows에서 테스트(`bin/bb_game_tests.exe`, `bin/bb_platform_tests.exe platform-test-scores.txt`)를 실행하거나 Windows CI 작업을 사용하세요. 교차 링크 성공만으로는 Windows 그래픽, 오디오, 입력 동작을 검증할 수 없습니다.
+교차 빌드는 게임플레이·플랫폼·레거시 오디오 디코더 테스트 실행 파일과 게임을 모두 컴파일하지만 빌드 호스트에서 Windows 바이너리를 실행하지는 않습니다. Windows에서 테스트(`bin/bb_game_tests.exe`, `bin/bb_platform_tests.exe platform-test-scores.txt`, `bin/bb_audio_decode_tests.exe`)를 실행하거나 Windows CI 작업을 사용하세요. 교차 링크 성공만으로는 Windows 그래픽, 오디오, 입력 동작을 검증할 수 없습니다.
 
 ## 그래픽 의존성 없는 게임플레이 테스트
 
@@ -67,7 +67,7 @@ sanitizer 프리셋에는 macOS/Linux의 Clang 또는 GCC가 필요합니다. �
 
 ## 빌드 범위와 재현성
 
-- `bb_core`는 그래픽에 의존하지 않는 C11 정적 라이브러리이며 `bb_game_tests`가 CTest로 검사합니다. `bb_platform_tests`는 빌드 디렉터리 안의 전용 임시 점수 파일을 사용해 점수 저장과 경로 처리를 검사합니다.
+- `bb_core`는 그래픽에 의존하지 않는 C11 정적 라이브러리이며 `bb_game_tests`가 CTest로 검사합니다. `bb_platform_tests`는 빌드 디렉터리 안의 전용 임시 점수 파일을 사용해 점수 저장과 경로 처리를 검사합니다. `bb_audio_decode_tests`는 실제 WAV·OGG 에셋과 손상·잘림 입력을 사용해 VS2010 경로의 디코더를 장치 없이 검사합니다.
 - `BubbleBobble`은 `main.c`, `bb_render.c`, `bb_platform.c`, `bb_core`로 구성됩니다. 플랫폼 통합은 `bb_platform.h` 뒤에 둡니다.
 - `cmake/PureCRaylib.cmake`는 내려받은 raylib 루트의 한정되지 않은 `project(raylib)`를 `project(raylib LANGUAGES C)`로 바꿉니다. 이는 CMake가 불필요하게 C++ 컴파일러를 탐색하지 않게 할 뿐 의존성 구현은 바꾸지 않습니다. 패치는 변경 전 기대한 소스인지 검증합니다.
 - 의존성이 C++ 또는 Objective-C++를 활성화하면 구성이 실패합니다. CTest도 `src/`와 `tests/`에서 C++ 소스 확장자를 거부합니다.
