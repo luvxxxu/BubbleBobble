@@ -41,11 +41,14 @@ static bool rects_overlap(const BBGame *game, const BBBody *a, float aw, float a
 static bool circles_overlap(const BBGame *game, const BBBody *a, float ar,
                             const BBBody *b, float br)
 {
+    float dx;
+    float dy;
+    float radius;
     if(game->collision.circles != NULL)
         return game->collision.circles(a->x, a->y, ar, b->x, b->y, br);
-    float dx = a->x - b->x;
-    float dy = a->y - b->y;
-    float radius = ar + br;
+    dx = a->x - b->x;
+    dy = a->y - b->y;
+    radius = ar + br;
     return dx * dx + dy * dy < radius * radius;
 }
 
@@ -57,10 +60,13 @@ static unsigned move_body(const BBGame *game, BBBody *body, float hw, float hh,
     unsigned hit = 0;
     float old_x = body->x;
     float old_y = body->y;
+    int x;
+    int y;
+    int tile;
     body->x += body->vx * dt;
-    for(int y = (int)floorf(body->y - hh + 0.0001f); y <= (int)floorf(body->y + hh - 0.0001f); ++y)
+    for(y = (int)floorf(body->y - hh + 0.0001f); y <= (int)floorf(body->y + hh - 0.0001f); ++y)
     {
-        for(int x = (int)floorf(body->x - hw + 0.0001f); x <= (int)floorf(body->x + hw - 0.0001f); ++x)
+        for(x = (int)floorf(body->x - hw + 0.0001f); x <= (int)floorf(body->x + hw - 0.0001f); ++x)
         {
             if(tile_at(game, x, y) != 3)
                 continue;
@@ -86,11 +92,11 @@ static unsigned move_body(const BBGame *game, BBBody *body, float hw, float hh,
 
     body->y += body->vy * dt;
     body->grounded = false;
-    for(int y = (int)floorf(body->y - hh + 0.0001f); y <= (int)floorf(body->y + hh + 0.0001f); ++y)
+    for(y = (int)floorf(body->y - hh + 0.0001f); y <= (int)floorf(body->y + hh + 0.0001f); ++y)
     {
-        for(int x = (int)floorf(body->x - hw + 0.0001f); x <= (int)floorf(body->x + hw - 0.0001f); ++x)
+        for(x = (int)floorf(body->x - hw + 0.0001f); x <= (int)floorf(body->x + hw - 0.0001f); ++x)
         {
-            int tile = tile_at(game, x, y);
+            tile = tile_at(game, x, y);
             if(tile != 3 && !(one_way && tile == 2))
                 continue;
             if(body->vy >= 0.0f && old_y + hh <= (float)y + 0.001f && body->y + hh >= (float)y)
@@ -143,6 +149,8 @@ static void spawn_enemy(BBGame *game, int index, BBEnemyType type, float x, floa
 
 static void enter_level(BBGame *game, int level)
 {
+    int i;
+    BBEnemyType type;
     game->level = level;
     game->level_time = 0.0f;
     game->state_time = 0.0f;
@@ -152,7 +160,7 @@ static void enter_level(BBGame *game, int level)
     memset(game->bubbles, 0, sizeof game->bubbles);
     memset(game->boulders, 0, sizeof game->boulders);
     memset(game->pickups, 0, sizeof game->pickups);
-    for(int i = 0; i < BB_MAX_PLAYERS; ++i)
+    for(i = 0; i < BB_MAX_PLAYERS; ++i)
     {
         if(game->players[i].active && game->players[i].state != BB_PLAYER_OUT)
         {
@@ -162,7 +170,7 @@ static void enter_level(BBGame *game, int level)
     }
     if(game->mode == BB_MODE_VERSUS)
     {
-        BBEnemyType type = random_unit(game) < 0.5f ? BB_ENEMY_ZENCHAN : BB_ENEMY_MAITA;
+        type = random_unit(game) < 0.5f ? BB_ENEMY_ZENCHAN : BB_ENEMY_MAITA;
         spawn_enemy(game, 0, type, 16.0f, 0.0f, 0.0f, true);
         game->enemies[0].state = BB_ENEMY_FALLING;
         return;
@@ -208,6 +216,8 @@ void bb_game_set_collision_backend(BBGame *game, BBCollisionBackend backend)
 
 void bb_game_start(BBGame *game, BBMode mode)
 {
+    int i;
+    BBPlayer *player;
     if(game == NULL || mode < BB_MODE_SOLO || mode > BB_MODE_VERSUS)
         return;
     memset(game->players, 0, sizeof game->players);
@@ -223,9 +233,9 @@ void bb_game_start(BBGame *game, BBMode mode)
     game->events = 0;
     game->level = 0;
     game->won = false;
-    for(int i = 0; i < BB_MAX_PLAYERS; ++i)
+    for(i = 0; i < BB_MAX_PLAYERS; ++i)
     {
-        BBPlayer *player = &game->players[i];
+        player = &game->players[i];
         place_player(player, i);
         player->active = i == 0 || mode == BB_MODE_COOP;
         player->lives = 3;
@@ -250,9 +260,10 @@ void bb_game_skip_intro(BBGame *game)
 int bb_game_enemies_left(const BBGame *game)
 {
     int count = 0;
+    int i;
     if(game == NULL)
         return 0;
-    for(int i = 0; i < BB_MAX_ENEMIES; ++i)
+    for(i = 0; i < BB_MAX_ENEMIES; ++i)
         if(game->enemies[i].active && game->enemies[i].state != BB_ENEMY_DEAD)
             ++count;
     return count;
@@ -272,25 +283,34 @@ static void damage_player(BBGame *game, BBPlayer *player)
 
 static void fire_bubble(BBGame *game, BBPlayer *player, int owner)
 {
+    int i;
+    int tile;
+    BBBubble *bubble;
+    float x;
+    float y;
+    float speed;
+    float distance;
+    float cast_x;
+    float boundary;
     if(player->fire_cooldown > 0.0f)
         return;
-    for(int i = 0; i < BB_MAX_BUBBLES; ++i)
+    for(i = 0; i < BB_MAX_BUBBLES; ++i)
     {
-        BBBubble *bubble = &game->bubbles[i];
+        bubble = &game->bubbles[i];
         if(bubble->active)
             continue;
-        float x = player->body.x + (float)player->facing * 2.4f;
-        float y = player->body.y;
-        float speed = 20.0f * (float)player->facing;
+        x = player->body.x + (float)player->facing * 2.4f;
+        y = player->body.y;
+        speed = 20.0f * (float)player->facing;
         /* 원본의 짧은 벽 레이캐스트를 따른다. 유한한 크기의 버블이
          * 벽 타일 내부에서 생성되지 않도록 벽 바깥에 배치한다. */
-        for(float distance = 0.1f; distance <= 3.15f; distance += 0.1f)
+        for(distance = 0.1f; distance <= 3.15f; distance += 0.1f)
         {
-            float cast_x = player->body.x + (float)player->facing * distance;
-            int tile = tile_at(game, (int)floorf(cast_x), (int)floorf(y));
+            cast_x = player->body.x + (float)player->facing * distance;
+            tile = tile_at(game, (int)floorf(cast_x), (int)floorf(y));
             if(tile == 2 || tile == 3)
             {
-                float boundary = player->facing > 0 ? floorf(cast_x) : floorf(cast_x) + 1.0f;
+                boundary = player->facing > 0 ? floorf(cast_x) : floorf(cast_x) + 1.0f;
                 x = boundary - (float)player->facing * 0.751f;
                 speed = 0.0f;
                 break;
@@ -312,6 +332,7 @@ static void fire_bubble(BBGame *game, BBPlayer *player, int owner)
 
 static void tick_player(BBGame *game, BBPlayer *player, int index, BBInput input, float dt)
 {
+    float move;
     if(!player->active || player->state == BB_PLAYER_OUT)
         return;
     player->invulnerable = decrease(player->invulnerable, dt);
@@ -332,7 +353,7 @@ static void tick_player(BBGame *game, BBPlayer *player, int index, BBInput input
         }
         return;
     }
-    float move = isfinite(input.move) ? clamp(input.move, -1.0f, 1.0f) : 0.0f;
+    move = isfinite(input.move) ? clamp(input.move, -1.0f, 1.0f) : 0.0f;
     if(move != 0.0f)
         player->facing = move < 0.0f ? -1 : 1;
     if(player->body.grounded)
@@ -377,15 +398,20 @@ static void tick_player(BBGame *game, BBPlayer *player, int index, BBInput input
 static const BBPlayer *closest_player(const BBGame *game, const BBBody *body)
 {
     const BBPlayer *target = NULL;
+    const BBPlayer *player;
     float nearest = 1.0e9f;
-    for(int i = 0; i < BB_MAX_PLAYERS; ++i)
+    float dx;
+    float dy;
+    float distance;
+    int i;
+    for(i = 0; i < BB_MAX_PLAYERS; ++i)
     {
-        const BBPlayer *player = &game->players[i];
+        player = &game->players[i];
         if(!player->active || player->state != BB_PLAYER_NORMAL)
             continue;
-        float dx = player->body.x - body->x;
-        float dy = player->body.y - body->y;
-        float distance = dx * dx + dy * dy;
+        dx = player->body.x - body->x;
+        dy = player->body.y - body->y;
+        distance = dx * dx + dy * dy;
         if(distance < nearest)
         {
             target = player;
@@ -399,7 +425,8 @@ static bool platform_above(const BBGame *game, const BBBody *body)
 {
     int column = (int)floorf(body->x);
     int start = (int)floorf(body->y - 1.0f);
-    for(int y = start; y > start - 5; --y)
+    int y;
+    for(y = start; y > start - 5; --y)
         if(tile_at(game, column, y) >= 2)
             return true;
     return false;
@@ -407,14 +434,17 @@ static bool platform_above(const BBGame *game, const BBBody *body)
 
 static void throw_boulder(BBGame *game, BBEnemy *enemy)
 {
+    int i;
+    BBBoulder *boulder;
+    float angle;
     if(enemy->throw_timer < 4.0f)
         return;
-    for(int i = 0; i < BB_MAX_BOULDERS; ++i)
+    for(i = 0; i < BB_MAX_BOULDERS; ++i)
     {
-        BBBoulder *boulder = &game->boulders[i];
+        boulder = &game->boulders[i];
         if(boulder->active)
             continue;
-        float angle = random_unit(game) - 0.5f;
+        angle = random_unit(game) - 0.5f;
         memset(boulder, 0, sizeof *boulder);
         boulder->body.x = enemy->body.x;
         boulder->body.y = enemy->body.y;
@@ -428,7 +458,8 @@ static void throw_boulder(BBGame *game, BBEnemy *enemy)
 
 static void spawn_pickup(BBGame *game, const BBEnemy *enemy)
 {
-    for(int i = 0; i < BB_MAX_PICKUPS; ++i)
+    int i;
+    for(i = 0; i < BB_MAX_PICKUPS; ++i)
     {
         if(game->pickups[i].active)
             continue;
@@ -444,6 +475,16 @@ static void spawn_pickup(BBGame *game, const BBEnemy *enemy)
 
 static void tick_enemy(BBGame *game, BBEnemy *enemy, BBInput input, float dt)
 {
+    const BBPlayer *target;
+    float progress;
+    float vx;
+    float vy;
+    float move;
+    float dx;
+    float multiplier;
+    float speed;
+    bool jump;
+    unsigned hit;
     if(!enemy->active || enemy->state == BB_ENEMY_CAPTURED)
         return;
     enemy->age += dt;
@@ -451,7 +492,7 @@ static void tick_enemy(BBGame *game, BBEnemy *enemy, BBInput input, float dt)
     {
         if(enemy->age <= enemy->spawn_delay)
             return;
-        float progress = clamp((enemy->age - enemy->spawn_delay) / 2.0f, 0.0f, 1.0f);
+        progress = clamp((enemy->age - enemy->spawn_delay) / 2.0f, 0.0f, 1.0f);
         enemy->body.y = enemy->spawn_y * progress;
         if(progress >= 1.0f)
             enemy->state = BB_ENEMY_FALLING;
@@ -460,10 +501,10 @@ static void tick_enemy(BBGame *game, BBEnemy *enemy, BBInput input, float dt)
     if(enemy->state == BB_ENEMY_DEAD)
     {
         enemy->body.vy += 9.81f * dt;
-        float vx = enemy->body.vx;
-        float vy = enemy->body.vy;
+        vx = enemy->body.vx;
+        vy = enemy->body.vy;
         enemy->bounce_timer += dt;
-        unsigned hit = move_body(game, &enemy->body, 0.95f, 0.95f, dt, true, true);
+        hit = move_body(game, &enemy->body, 0.95f, 0.95f, dt, true, true);
         if(hit & HIT_X)
             enemy->body.vx = -vx;
         if(hit & HIT_Y)
@@ -485,8 +526,8 @@ static void tick_enemy(BBGame *game, BBEnemy *enemy, BBInput input, float dt)
     enemy->jump_timer += dt;
     enemy->turn_timer += dt;
     enemy->throw_timer += dt;
-    float move = (float)enemy->facing;
-    bool jump = false;
+    move = (float)enemy->facing;
+    jump = false;
     if(enemy->controlled)
     {
         move = isfinite(input.move) ? clamp(input.move, -1.0f, 1.0f) : 0.0f;
@@ -503,10 +544,10 @@ static void tick_enemy(BBGame *game, BBEnemy *enemy, BBInput input, float dt)
     }
     else
     {
-        const BBPlayer *target = closest_player(game, &enemy->body);
+        target = closest_player(game, &enemy->body);
         if(target != NULL)
         {
-            float dx = target->body.x - enemy->body.x;
+            dx = target->body.x - enemy->body.x;
             if(enemy->turn_timer >= 2.0f + (float)((unsigned)(enemy - game->enemies) % 4) * 0.5f && fabsf(dx) > 5.0f)
             {
                 enemy->facing = dx < 0.0f ? -1 : 1;
@@ -519,8 +560,8 @@ static void tick_enemy(BBGame *game, BBEnemy *enemy, BBInput input, float dt)
         if(enemy->type == BB_ENEMY_MAITA && enemy->throw_timer >= 5.0f)
             throw_boulder(game, enemy);
     }
-    float multiplier = enemy->angry && enemy->type == BB_ENEMY_ZENCHAN ? 1.8f : 1.0f;
-    float speed = enemy->type == BB_ENEMY_ZENCHAN ? 8.0f : 6.0f;
+    multiplier = enemy->angry && enemy->type == BB_ENEMY_ZENCHAN ? 1.8f : 1.0f;
+    speed = enemy->type == BB_ENEMY_ZENCHAN ? 8.0f : 6.0f;
     if(enemy->body.grounded)
     {
         enemy->state = BB_ENEMY_WALKING;
@@ -543,7 +584,7 @@ static void tick_enemy(BBGame *game, BBEnemy *enemy, BBInput input, float dt)
         enemy->body.vx = 0.0f;
         enemy->body.vy = (enemy->type == BB_ENEMY_ZENCHAN ? 5.0f : 8.0f) * multiplier;
     }
-    unsigned hit = move_body(game, &enemy->body, 0.9f, 0.95f, dt, true, true);
+    hit = move_body(game, &enemy->body, 0.9f, 0.95f, dt, true, true);
     if((hit & HIT_X) && !enemy->controlled)
     {
         enemy->facing = -enemy->facing;
@@ -565,9 +606,12 @@ static void pop_bubble(BBGame *game, BBBubble *bubble, bool release)
 
 static void finish_pop(BBGame *game, BBBubble *bubble)
 {
+    BBEnemy *enemy;
+    float angle;
+    float speed;
     if(bubble->captured_enemy >= 0 && bubble->captured_enemy < BB_MAX_ENEMIES)
     {
-        BBEnemy *enemy = &game->enemies[bubble->captured_enemy];
+        enemy = &game->enemies[bubble->captured_enemy];
         enemy->body = bubble->body;
         enemy->body.grounded = false;
         enemy->age = 0.0f;
@@ -579,9 +623,9 @@ static void finish_pop(BBGame *game, BBBubble *bubble)
         }
         else
         {
-            float angle = (50.0f + 20.0f * random_unit(game)) * 0.01745329252f;
+            angle = (50.0f + 20.0f * random_unit(game)) * 0.01745329252f;
             /* Julgen의 밀도 0 동적 픽스처는 Box2D에서 질량 1로 동작한다. */
-            float speed = 15.0f + 5.0f * random_unit(game);
+            speed = 15.0f + 5.0f * random_unit(game);
             enemy->state = BB_ENEMY_DEAD;
             enemy->body.vx = cosf(angle) * speed * (random_unit(game) < 0.5f ? -1.0f : 1.0f);
             enemy->body.vy = -sinf(angle) * speed;
@@ -594,6 +638,9 @@ static void finish_pop(BBGame *game, BBBubble *bubble)
 
 static void tick_bubble(BBGame *game, BBBubble *bubble, float dt, float center_x, float center_y)
 {
+    float vx;
+    float vy;
+    unsigned hit;
     if(!bubble->active)
         return;
     if(bubble->popping)
@@ -619,9 +666,9 @@ static void tick_bubble(BBGame *game, BBBubble *bubble, float dt, float center_x
         if(bubble->body.y > 11.0f)
             bubble->body.vy -= 3.0f * dt;
     }
-    float vx = bubble->body.vx;
-    float vy = bubble->body.vy;
-    unsigned hit = move_body(game, &bubble->body, 0.75f, 0.75f, dt, false, false);
+    vx = bubble->body.vx;
+    vy = bubble->body.vy;
+    hit = move_body(game, &bubble->body, 0.75f, 0.75f, dt, false, false);
     if(hit & HIT_X)
         bubble->body.vx = -vx * 0.8f;
     if(hit & HIT_Y)
@@ -637,6 +684,9 @@ static void tick_bubble(BBGame *game, BBBubble *bubble, float dt, float center_x
 
 static void tick_boulder(BBGame *game, BBBoulder *boulder, float dt)
 {
+    float vx;
+    float vy;
+    unsigned hit;
     if(!boulder->active)
         return;
     boulder->age += dt;
@@ -646,9 +696,9 @@ static void tick_boulder(BBGame *game, BBBoulder *boulder, float dt)
         return;
     }
     boulder->body.vy += 9.81f * dt;
-    float vx = boulder->body.vx;
-    float vy = boulder->body.vy;
-    unsigned hit = move_body(game, &boulder->body, 0.75f, 0.75f, dt, true, true);
+    vx = boulder->body.vx;
+    vy = boulder->body.vy;
+    hit = move_body(game, &boulder->body, 0.75f, 0.75f, dt, true, true);
     if(hit & HIT_X)
         boulder->body.vx = -vx * 0.9f;
     if(hit & HIT_Y)
@@ -672,6 +722,11 @@ static void tick_pickup(BBGame *game, BBPickup *pickup, float dt)
 
 void bb_game_update(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float dt)
 {
+    BBInput neutral = {0};
+    float center_x;
+    float center_y;
+    int bubbles;
+    int i;
     if(game == NULL)
         return;
     game->events = 0;
@@ -689,15 +744,14 @@ void bb_game_update(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float dt
         return;
     }
     game->level_time += dt;
-    BBInput neutral = {0};
-    for(int i = 0; i < BB_MAX_PLAYERS; ++i)
+    for(i = 0; i < BB_MAX_PLAYERS; ++i)
         tick_player(game, &game->players[i], i, inputs != NULL ? inputs[i] : neutral, dt);
-    for(int i = 0; i < BB_MAX_ENEMIES; ++i)
+    for(i = 0; i < BB_MAX_ENEMIES; ++i)
         tick_enemy(game, &game->enemies[i], inputs != NULL ? inputs[1] : neutral, dt);
-    float center_x = 0.0f;
-    float center_y = 0.0f;
-    int bubbles = 0;
-    for(int i = 0; i < BB_MAX_BUBBLES; ++i)
+    center_x = 0.0f;
+    center_y = 0.0f;
+    bubbles = 0;
+    for(i = 0; i < BB_MAX_BUBBLES; ++i)
     {
         if(game->bubbles[i].active && !game->bubbles[i].popping)
         {
@@ -711,27 +765,35 @@ void bb_game_update(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float dt
         center_x /= (float)bubbles;
         center_y /= (float)bubbles;
     }
-    for(int i = 0; i < BB_MAX_BUBBLES; ++i)
+    for(i = 0; i < BB_MAX_BUBBLES; ++i)
         tick_bubble(game, &game->bubbles[i], dt, center_x, center_y);
-    for(int i = 0; i < BB_MAX_BOULDERS; ++i)
+    for(i = 0; i < BB_MAX_BOULDERS; ++i)
         tick_boulder(game, &game->boulders[i], dt);
-    for(int i = 0; i < BB_MAX_PICKUPS; ++i)
+    for(i = 0; i < BB_MAX_PICKUPS; ++i)
         tick_pickup(game, &game->pickups[i], dt);
     game->bump_pending = true;
 }
 
 static void check_bubble_bump(BBGame *game)
 {
-    for(int b = 0; b < BB_MAX_BUBBLES; ++b)
+    int b;
+    int e;
+    int p;
+    BBBubble *bubble;
+    BBEnemy *enemy;
+    BBPlayer *player;
+    float dx;
+    float dy;
+    for(b = 0; b < BB_MAX_BUBBLES; ++b)
     {
-        BBBubble *bubble = &game->bubbles[b];
+        bubble = &game->bubbles[b];
         if(!bubble->active || bubble->popping)
             continue;
         if(bubble->captured_enemy < 0)
         {
-            for(int e = 0; e < BB_MAX_ENEMIES; ++e)
+            for(e = 0; e < BB_MAX_ENEMIES; ++e)
             {
-                BBEnemy *enemy = &game->enemies[e];
+                enemy = &game->enemies[e];
                 if(!enemy->active || enemy->state == BB_ENEMY_SPAWNING ||
                    enemy->state == BB_ENEMY_CAPTURED || enemy->state == BB_ENEMY_DEAD)
                     continue;
@@ -745,14 +807,14 @@ static void check_bubble_bump(BBGame *game)
         }
         if(bubble->age < 1.0f)
             continue;
-        for(int p = 0; p < BB_MAX_PLAYERS; ++p)
+        for(p = 0; p < BB_MAX_PLAYERS; ++p)
         {
-            BBPlayer *player = &game->players[p];
+            player = &game->players[p];
             if(!player->active || player->state != BB_PLAYER_NORMAL ||
                !circles_overlap(game, &bubble->body, 0.75f, &player->body, 0.95f))
                 continue;
-            float dx = player->body.vx - bubble->body.vx;
-            float dy = player->body.vy - bubble->body.vy;
+            dx = player->body.vx - bubble->body.vx;
+            dy = player->body.vy - bubble->body.vy;
             if(sqrtf(dx * dx + dy * dy) + bubble->age >= 15.0f)
             {
                 pop_bubble(game, bubble, false);
@@ -770,12 +832,15 @@ static void check_bubble_bump(BBGame *game)
 
 static void check_boulder_bump(BBGame *game)
 {
-    for(int b = 0; b < BB_MAX_BOULDERS; ++b)
+    int b;
+    int p;
+    BBBoulder *boulder;
+    for(b = 0; b < BB_MAX_BOULDERS; ++b)
     {
-        BBBoulder *boulder = &game->boulders[b];
+        boulder = &game->boulders[b];
         if(!boulder->active)
             continue;
-        for(int p = 0; p < BB_MAX_PLAYERS; ++p)
+        for(p = 0; p < BB_MAX_PLAYERS; ++p)
             if(circles_overlap(game, &boulder->body, 0.75f, &game->players[p].body, 0.95f))
                 damage_player(game, &game->players[p]);
     }
@@ -783,14 +848,18 @@ static void check_boulder_bump(BBGame *game)
 
 static void check_pickup_bump(BBGame *game)
 {
-    for(int i = 0; i < BB_MAX_PICKUPS; ++i)
+    int i;
+    int p;
+    BBPickup *pickup;
+    BBPlayer *player;
+    for(i = 0; i < BB_MAX_PICKUPS; ++i)
     {
-        BBPickup *pickup = &game->pickups[i];
+        pickup = &game->pickups[i];
         if(!pickup->active)
             continue;
-        for(int p = 0; p < BB_MAX_PLAYERS; ++p)
+        for(p = 0; p < BB_MAX_PLAYERS; ++p)
         {
-            BBPlayer *player = &game->players[p];
+            player = &game->players[p];
             if(player->active && player->state == BB_PLAYER_NORMAL &&
                circles_overlap(game, &pickup->body, 0.95f, &player->body, 0.95f))
             {
@@ -805,17 +874,22 @@ static void check_pickup_bump(BBGame *game)
 
 void bb_game_check_bump(BBGame *game)
 {
+    int e;
+    int p;
+    int i;
+    BBEnemy *enemy;
+    bool living_player;
     if(game == NULL || !game->bump_pending)
         return;
     game->bump_pending = false;
     check_bubble_bump(game);
     /* 버블 포획을 먼저 처리하면 같은 틱에 적이 플레이어를 맞히지 않는다. */
-    for(int e = 0; e < BB_MAX_ENEMIES; ++e)
+    for(e = 0; e < BB_MAX_ENEMIES; ++e)
     {
-        BBEnemy *enemy = &game->enemies[e];
+        enemy = &game->enemies[e];
         if(!enemy->active || enemy->state == BB_ENEMY_SPAWNING || enemy->state == BB_ENEMY_CAPTURED || enemy->state == BB_ENEMY_DEAD)
             continue;
-        for(int p = 0; p < BB_MAX_PLAYERS; ++p)
+        for(p = 0; p < BB_MAX_PLAYERS; ++p)
             if(rects_overlap(game, &enemy->body, 0.9f, 0.95f,
                              &game->players[p].body, 0.9f, 0.975f))
                 damage_player(game, &game->players[p]);
@@ -823,8 +897,8 @@ void bb_game_check_bump(BBGame *game)
     check_boulder_bump(game);
     check_pickup_bump(game);
 
-    bool living_player = false;
-    for(int i = 0; i < BB_MAX_PLAYERS; ++i)
+    living_player = false;
+    for(i = 0; i < BB_MAX_PLAYERS; ++i)
         if(game->players[i].active && game->players[i].state != BB_PLAYER_OUT)
             living_player = true;
     if(!living_player)

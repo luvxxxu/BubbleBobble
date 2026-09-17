@@ -2,7 +2,7 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "CMake: macOS arm64 구성",
+            "label": "CMake: 기본 대상 구성",
             "type": "process",
             "command": "${workspaceFolder}/scripts/cmake.sh",
             "args": [
@@ -12,7 +12,17 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "problemMatcher": "$gcc"
+            "problemMatcher": [
+                "$gcc",
+                "$msCompile"
+            ],
+            "windows": {
+                "command": "cmake",
+                "args": [
+                    "--preset",
+                    "windows-x64"
+                ]
+            }
         },
         {
             "label": "CMake: BubbleBobble 빌드",
@@ -26,30 +36,84 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "dependsOn": "CMake: macOS arm64 구성",
+            "dependsOn": "CMake: 기본 대상 구성",
             "dependsOrder": "sequence",
-            "problemMatcher": "$gcc",
+            "problemMatcher": [
+                "$gcc",
+                "$msCompile"
+            ],
             "group": {
                 "kind": "build",
                 "isDefault": true
+            },
+            "windows": {
+                "command": "cmake",
+                "args": [
+                    "--build",
+                    "--preset",
+                    "windows-x64"
+                ]
             }
         },
         {
-            "label": "C/C++: clang build active file",
+            "label": "CMake: Windows x64 구성",
             "type": "process",
-            "command": "${workspaceFolder}/scripts/cmake.sh",
+            "command": "cmake",
             "args": [
-                "--build",
                 "--preset",
-                "macos-arm64"
+                "windows-x64"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "dependsOn": "CMake: macOS arm64 구성",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "CMake: Windows x64 빌드",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "windows-x64"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "CMake: Windows x64 구성",
             "dependsOrder": "sequence",
-            "problemMatcher": "$gcc",
-            "detail": "개별 C 파일 대신 전체 CMake 프로젝트를 빌드합니다."
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "CMake: Windows x86 구성",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "--preset",
+                "windows-x86"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "CMake: Windows x86 빌드",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "windows-x86"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "CMake: Windows x86 구성",
+            "dependsOrder": "sequence",
+            "problemMatcher": "$msCompile",
+            "group": "build"
         }
     ]
 }

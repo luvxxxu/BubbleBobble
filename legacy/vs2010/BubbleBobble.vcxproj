@@ -32,12 +32,12 @@
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup><OutDir>$(ProjectDir)build\$(Platform)\$(Configuration)\</OutDir><IntDir>$(ProjectDir)build\$(Platform)\$(Configuration)\obj\</IntDir><TargetName>BubbleBobble</TargetName></PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
-    <ClCompile><WarningLevel>Level4</WarningLevel><Optimization>Disabled</Optimization><PreprocessorDefinitions>WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;BB_VS2010=1;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><CompileAs>CompileAsC</CompileAs><AdditionalOptions>/wd4819 /wd4996 %(AdditionalOptions)</AdditionalOptions></ClCompile>
+    <ClCompile><WarningLevel>Level4</WarningLevel><Optimization>Disabled</Optimization><RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary><PreprocessorDefinitions>WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;BB_VS2010=1;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><CompileAs>CompileAsC</CompileAs><AdditionalOptions>/wd4819 /wd4996 %(AdditionalOptions)</AdditionalOptions></ClCompile>
     <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>gdiplus.lib;msimg32.lib;gdi32.lib;user32.lib;kernel32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
     <PostBuildEvent><Command>xcopy /E /I /Y &quot;$(ProjectDir)..\..\Assets&quot; &quot;$(OutDir)assets&quot; &gt;nul</Command></PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Release'">
-    <ClCompile><WarningLevel>Level4</WarningLevel><Optimization>MaxSpeed</Optimization><FunctionLevelLinking>true</FunctionLevelLinking><PreprocessorDefinitions>WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;BB_VS2010=1;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><CompileAs>CompileAsC</CompileAs><AdditionalOptions>/wd4819 /wd4996 %(AdditionalOptions)</AdditionalOptions></ClCompile>
+    <ClCompile><WarningLevel>Level4</WarningLevel><Optimization>MaxSpeed</Optimization><FunctionLevelLinking>true</FunctionLevelLinking><RuntimeLibrary>MultiThreaded</RuntimeLibrary><PreprocessorDefinitions>WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;BB_VS2010=1;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><CompileAs>CompileAsC</CompileAs><AdditionalOptions>/wd4819 /wd4996 %(AdditionalOptions)</AdditionalOptions></ClCompile>
     <Link><SubSystem>Console</SubSystem><EnableCOMDATFolding>true</EnableCOMDATFolding><OptimizeReferences>true</OptimizeReferences><AdditionalDependencies>gdiplus.lib;msimg32.lib;gdi32.lib;user32.lib;kernel32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
     <PostBuildEvent><Command>xcopy /E /I /Y &quot;$(ProjectDir)..\..\Assets&quot; &quot;$(OutDir)assets&quot; &gt;nul</Command></PostBuildEvent>
   </ItemDefinitionGroup>
@@ -45,7 +45,7 @@
     <ClCompile Include="..\..\src\main.c" /><ClCompile Include="..\..\src\bb_game.c" /><ClCompile Include="..\..\src\bb_render.c" /><ClCompile Include="..\..\src\bb_platform.c" /><ClCompile Include="..\..\src\bb_collision_raylib.c" /><ClCompile Include="..\..\src\bb_raylib_types.c" /><ClCompile Include="raylib_win32.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\src\bb_compat.h" /><ClInclude Include="..\..\src\bb_game.h" /><ClInclude Include="..\..\src\bb_render.h" /><ClInclude Include="..\..\src\bb_platform.h" /><ClInclude Include="..\..\src\bb_collision_raylib.h" /><ClInclude Include="..\..\src\bb_raylib_types.h" /><ClInclude Include="raylib.h" />
+    <ClInclude Include="..\..\src\bb_compat.h" /><ClInclude Include="..\..\src\bb_game.h" /><ClInclude Include="..\..\src\bb_render.h" /><ClInclude Include="..\..\src\bb_platform.h" /><ClInclude Include="..\..\src\bb_collision_raylib.h" /><ClInclude Include="..\..\src\bb_raylib_types.h" /><ClInclude Include="bb_gdiplus_flat.h" /><ClInclude Include="raylib.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

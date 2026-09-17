@@ -1,20 +1,23 @@
 #define WIN32_LEAN_AND_MEAN
-/* Win32/GDI+의 전역 이름이 raylib 호환 API의 이름과 겹친다. */
+/* Win32의 함수 이름이 raylib 호환 API의 이름과 겹친다. */
 #define Rectangle BBWin32Rectangle
 #define CloseWindow BBWin32CloseWindow
-#define LoadImage BBWin32LoadImage
-#define DrawText BBWin32DrawText
-#define DrawTextEx BBWin32DrawTextEx
-#define Color BBGdiPlusColor
 #include <windows.h>
-#include <propidl.h>
-#include <gdiplus.h>
-#undef Color
-#undef DrawTextEx
-#undef DrawText
-#undef LoadImage
 #undef CloseWindow
 #undef Rectangle
+
+/* Win32 exposes these as ANSI/Unicode selection macros. */
+#ifdef LoadImage
+#undef LoadImage
+#endif
+#ifdef DrawText
+#undef DrawText
+#endif
+#ifdef DrawTextEx
+#undef DrawTextEx
+#endif
+
+#include "bb_gdiplus_flat.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -22,6 +25,7 @@
 #include <string.h>
 
 #include "raylib.h"
+#include "bb_platform.h"
 
 #define BB_RESOURCE_COUNT 128
 
@@ -59,8 +63,42 @@ static LARGE_INTEGER bb_last_tick;
 static float bb_frame_time = 1.0f / 60.0f;
 static int bb_target_fps = 60;
 static ULONG_PTR bb_gdiplus_token;
+static bool bb_gdiplus_startup_failed;
+static bool bb_gdiplus_atexit_registered;
 static LoadFileDataCallback bb_file_loader;
 static unsigned int bb_config_flags;
+
+static void bb_gdiplus_shutdown(void)
+{
+    if (bb_gdiplus_token != 0) GdiplusShutdown(bb_gdiplus_token);
+    bb_gdiplus_token = 0;
+}
+
+/*
+ * Asset validation runs before InitWindow().  GDI+ must therefore be ready
+ * independently of window creation; this helper is intentionally idempotent
+ * and also covers callers that load an image before installing a file loader.
+ */
+static bool bb_gdiplus_startup(void)
+{
+    BBGdipStartupInput startup_input;
+    BBGdipStatus status;
+    if (bb_gdiplus_token != 0) return true;
+    if (bb_gdiplus_startup_failed) return false;
+    memset(&startup_input, 0, sizeof startup_input);
+    startup_input.GdiplusVersion = 1;
+    status = GdiplusStartup(&bb_gdiplus_token, &startup_input, NULL);
+    if (status != BB_GDIP_OK || bb_gdiplus_token == 0) {
+        bb_gdiplus_token = 0;
+        bb_gdiplus_startup_failed = true;
+        fprintf(stderr, "Could not initialize GDI+ (status %d).\n", (int)status);
+        return false;
+    }
+    if (!bb_gdiplus_atexit_registered) {
+        if (atexit(bb_gdiplus_shutdown) == 0) bb_gdiplus_atexit_registered = true;
+    }
+    return true;
+}
 
 static bool bb_asset_exists(const char *path)
 {
@@ -72,7 +110,7 @@ static bool bb_asset_exists(const char *path)
         MemFree(data);
         return true;
     }
-    file = fopen(path, "rb");
+    file = bb_platform_fopen(path, "rb");
     if (file == NULL) return false;
     fclose(file);
     return true;
@@ -190,18 +228,21 @@ static wchar_t *bb_utf8_to_wide(const char *value)
 
 static HBITMAP bb_load_hbitmap(const char *path, int *width, int *height)
 {
-    GpImage *image;
+    BBGdipImage *image;
     HBITMAP bitmap;
     UINT image_width;
     UINT image_height;
     wchar_t *wide = bb_utf8_to_wide(path);
-    if (wide == NULL) return NULL;
+    if (wide == NULL || !bb_gdiplus_startup()) {
+        free(wide);
+        return NULL;
+    }
     image = NULL;
     bitmap = NULL;
-    if (GdipLoadImageFromFile(wide, &image) == Ok && image != NULL &&
-        GdipGetImageWidth(image, &image_width) == Ok &&
-        GdipGetImageHeight(image, &image_height) == Ok &&
-        GdipCreateHBITMAPFromBitmap((GpBitmap *)image, &bitmap, 0) == Ok) {
+    if (GdipLoadImageFromFile(wide, &image) == BB_GDIP_OK && image != NULL &&
+        GdipGetImageWidth(image, &image_width) == BB_GDIP_OK &&
+        GdipGetImageHeight(image, &image_height) == BB_GDIP_OK &&
+        GdipCreateHBITMAPFromBitmap((BBGdipBitmap *)image, &bitmap, 0) == BB_GDIP_OK) {
         *width = (int)image_width;
         *height = (int)image_height;
     }
@@ -260,19 +301,16 @@ void SetConfigFlags(unsigned int flags) { bb_config_flags = flags; }
 void InitWindow(int width, int height, const char *title)
 {
     WNDCLASSA window_class;
-    GdiplusStartupInput startup_input;
     RECT rect;
+    if (!bb_gdiplus_startup()) return;
     QueryPerformanceFrequency(&bb_frequency);
     QueryPerformanceCounter(&bb_last_tick);
-    memset(&startup_input, 0, sizeof startup_input);
-    startup_input.GdiplusVersion = 1;
-    GdiplusStartup(&bb_gdiplus_token, &startup_input, NULL);
     memset(&window_class, 0, sizeof window_class);
     window_class.lpfnWndProc = bb_window_proc;
     window_class.hInstance = GetModuleHandle(NULL);
     window_class.hCursor = LoadCursor(NULL, IDC_ARROW);
     window_class.lpszClassName = "BubbleBobbleVS2010";
-    RegisterClassA(&window_class);
+    if (RegisterClassA(&window_class) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) return;
     rect.left = 0;
     rect.top = 0;
     rect.right = width;
@@ -282,7 +320,13 @@ void InitWindow(int width, int height, const char *title)
                               (bb_config_flags & FLAG_WINDOW_RESIZABLE ? WS_OVERLAPPEDWINDOW : WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX) | WS_VISIBLE,
                               CW_USEDEFAULT, CW_USEDEFAULT, rect.right - rect.left, rect.bottom - rect.top,
                               NULL, NULL, window_class.hInstance, NULL);
+    if (bb_window == NULL) return;
     bb_screen = bb_make_bitmap(width, height);
+    if (bb_screen.dc == NULL) {
+        DestroyWindow(bb_window);
+        bb_window = NULL;
+        return;
+    }
     bb_current_dc = bb_screen.dc;
 }
 
@@ -293,8 +337,8 @@ void CloseWindow(void)
     bb_release_bitmap(&bb_screen);
     if (bb_window != NULL) DestroyWindow(bb_window);
     bb_window = NULL;
-    if (bb_gdiplus_token != 0) GdiplusShutdown(bb_gdiplus_token);
-    bb_gdiplus_token = 0;
+    bb_current_dc = NULL;
+    bb_gdiplus_shutdown();
 }
 
 bool WindowShouldClose(void)
@@ -380,7 +424,12 @@ bool IsGamepadButtonDown(int gamepad, int button) { (void)gamepad; (void)button;
 bool IsGamepadButtonPressed(int gamepad, int button) { (void)gamepad; (void)button; return false; }
 void *MemAlloc(unsigned int size) { return malloc(size); }
 void MemFree(void *memory) { free(memory); }
-void SetLoadFileDataCallback(LoadFileDataCallback callback) { bb_file_loader = callback; }
+void SetLoadFileDataCallback(LoadFileDataCallback callback)
+{
+    bb_file_loader = callback;
+    /* main.c installs this immediately before validation of PNG assets. */
+    (void)bb_gdiplus_startup();
+}
 
 Image LoadImage(const char *fileName)
 {
@@ -633,13 +682,11 @@ Font GetFontDefault(void)
 Font LoadFontEx(const char *fileName, int fontSize, int *codepoints, int codepointCount)
 {
     Font font;
-    FILE *file;
     (void)codepoints;
     (void)codepointCount;
     font = GetFontDefault();
-    file = fopen(fileName, "rb");
-    if (file == NULL) return font;
-    fclose(file);
+    /* Use the UTF-8-aware installed loader instead of the ANSI CRT fopen. */
+    if (!bb_asset_exists(fileName)) return font;
     font.baseSize = fontSize;
     font.glyphCount = 95;
     font.texture.id = 1;
@@ -692,11 +739,9 @@ void SetMasterVolume(float volume) { (void)volume; }
 Wave LoadWave(const char *fileName)
 {
     Wave wave;
-    FILE *file;
     memset(&wave, 0, sizeof wave);
-    file = fopen(fileName, "rb");
-    if (file == NULL) return wave;
-    fclose(file);
+    /* Validation only needs to prove that the UTF-8 asset is readable. */
+    if (!bb_asset_exists(fileName)) return wave;
     wave.data = malloc(1);
     return wave;
 }

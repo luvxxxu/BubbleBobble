@@ -12,6 +12,28 @@
             "externalConsole": false,
             "MIMode": "lldb",
             "preLaunchTask": "CMake: BubbleBobble 빌드"
+        },
+        {
+            "name": "BubbleBobble (Windows x64)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/windows-x64/bin/Release/BubbleBobble.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/build/windows-x64/bin/Release",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "preLaunchTask": "CMake: Windows x64 빌드"
+        },
+        {
+            "name": "BubbleBobble (Windows x86)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/windows-x86/bin/Release/BubbleBobble.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/build/windows-x86/bin/Release",
+            "stopAtEntry": false,
+            "externalConsole": false,
+            "preLaunchTask": "CMake: Windows x86 빌드"
         }
     ]
 }

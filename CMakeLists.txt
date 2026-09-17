@@ -1,4 +1,12 @@
 cmake_minimum_required(VERSION 3.24...3.31)
+
+# Windows 패키지는 Visual C++ 재배포 DLL 없이 실행할 수 있도록 기본적으로 정적 CRT를 쓴다.
+# CMP0091은 첫 project()/enable_language() 전에 이 변수를 읽으므로 이 위치를 유지한다.
+option(BB_MSVC_STATIC_RUNTIME "Statically link the MSVC runtime in Windows builds" ON)
+if(BB_MSVC_STATIC_RUNTIME)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 project(BubbleBobble VERSION 0.1.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)

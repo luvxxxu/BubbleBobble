@@ -1,6 +1,6 @@
 # C 포트 빌드
 
-애플리케이션과 게임플레이 코어에는 C11 컴파일러가 필요합니다. C++ 컴파일러, C++ 게임 소스, STL, C++ 런타임은 필요하지 않습니다. CMake는 해시로 고정한 raylib 5.5 소스 압축 파일을 빌드 트리에 내려받습니다. 번들 GLFW, 이미지·글꼴 디코더, miniaudio가 나머지 의존성을 제공합니다. GLFW는 macOS에서 네이티브 Objective-C Cocoa 인터페이스를 사용합니다. 게임과 플랫폼 소스는 C입니다.
+최신 CMake 애플리케이션과 게임플레이 코어에는 C11 컴파일러가 필요합니다. C++ 컴파일러, C++ 게임 소스, STL, C++ 런타임은 필요하지 않습니다. CMake는 해시로 고정한 raylib 5.5 소스 압축 파일을 빌드 트리에 내려받습니다. 번들 GLFW, 이미지·글꼴 디코더, miniaudio가 나머지 의존성을 제공합니다. GLFW는 macOS에서 네이티브 Objective-C Cocoa 인터페이스를 사용합니다. 게임과 플랫폼 소스는 C입니다. 별도의 `legacy/vs2010` 솔루션은 VS2010 C 컴파일러가 처리할 수 있는 문법과 Win32/GDI+ C 호환 렌더러를 사용합니다.
 
 필수 조건은 CMake 3.24 이상과 플랫폼 컴파일러입니다. 첫 데스크톱 구성에는 GitHub에 HTTPS로 접근할 수 있어야 합니다. 이후 빌드는 내려받은 의존성을 재사용합니다. `BB_BUILD_GAME=OFF`는 내려받은 의존성, 윈도 서버, 오디오 장치 없이 실행할 수 있습니다.
 
@@ -26,7 +26,17 @@ C 컴파일러와 Windows SDK를 제공하는 **Desktop development with C++** �
 
 기본 설치 결과물은 서명된 설치 관리자가 아니라 명령줄 실행 파일(Windows의 콘솔 `.exe`)입니다. `scripts/package-macos.sh`는 별도로 서명되지 않은 macOS `.app`을 만듭니다. 자세한 내용은 [macOS 앱 패키징](MACOS_APP.md)을 참고하세요.
 
-패키지는 `build/package/windows-x86/bin` 및 `build/package/windows-x64/bin`에 생성됩니다. 각 폴더에는 `BubbleBobble.exe`와 `assets`가 들어 있습니다. 프리셋은 `Win32`와 `x64`를 명시적으로 선택합니다. 애플리케이션은 플랫폼 C 런타임과 시스템 그래픽·오디오 라이브러리를 사용하며 raylib는 정적으로 링크합니다.
+패키지는 `build/package/windows-x86/bin` 및 `build/package/windows-x64/bin`에 생성됩니다. 각 폴더에는 `BubbleBobble.exe`와 `assets`가 들어 있습니다. 프리셋은 `Win32`와 `x64`를 명시적으로 선택합니다. 기본값은 MSVC C 런타임을 정적으로 링크하므로 Visual C++ 재배포 DLL을 별도로 함께 배포할 필요가 없습니다. raylib도 정적으로 링크하며, Windows가 제공하는 그래픽·오디오 시스템 라이브러리만 사용합니다. 특수한 조직 정책상 동적 CRT가 필요하면 구성 시 `-DBB_MSVC_STATIC_RUNTIME=OFF`를 지정하고 해당 Visual C++ 재배포 패키지를 설치해야 합니다.
+
+### Windows의 VS Code
+
+저장소를 Windows에서 처음 열면 `.vscode/extensions.json`이 CMake Tools와 C/C++ 확장을 제안합니다. 확장을 설치한 뒤 **실행 및 디버그**에서 `BubbleBobble (Windows x64)` 또는 `BubbleBobble (Windows x86)`을 선택하고 F5를 누르세요. 각 구성은 대응하는 CMake 프리셋을 구성·빌드한 뒤 `build/windows-*/bin/Release/BubbleBobble.exe`를 그 실행 파일 옆의 `assets` 폴더를 작업 디렉터리로 하여 시작합니다. macOS용 구성은 Windows에서 선택하지 마세요.
+
+### Visual Studio 2010
+
+VS2010 SP1과 해당 x86/x64 C 도구, Windows SDK를 설치한 뒤 [legacy/vs2010/BubbleBobble.sln](../legacy/vs2010/BubbleBobble.sln)을 엽니다. 구성 관리자에서 `Release | Win32` 또는 `Release | x64`를 선택하고 빌드하세요. 결과물은 각각 `legacy/vs2010/build/Win32/Release/BubbleBobble.exe` 및 `legacy/vs2010/build/x64/Release/BubbleBobble.exe`에 생성되며, 빌드 후 이벤트가 `assets`를 자동으로 복사합니다. Release 구성은 CRT를 정적으로 링크합니다. 실행 파일만 따로 옮기지 말고 `assets` 디렉터리를 함께 유지해야 합니다.
+
+VS2010 경로는 오래된 C 컴파일러용 Win32/GDI+ 렌더러이므로 키보드 입력, 그래픽, UTF-8 경로의 에셋과 점수 저장을 지원합니다. 오디오·게임패드·스크린샷까지 포함한 전체 raylib 프런트엔드는 위의 Visual Studio 2022 CMake 경로를 사용하세요.
 
 ## macOS 또는 Linux에서 Windows 교차 컴파일
 

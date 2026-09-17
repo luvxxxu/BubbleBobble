@@ -1,7 +1,5 @@
 {
     "cmake.useCMakePresets": "always",
-    "cmake.configurePreset": "macos-arm64",
-    "cmake.buildPreset": "macos-arm64",
     "cmake.configureOnOpen": false,
-    "C_Cpp.default.compileCommands": "${workspaceFolder}/build/macos-arm64/compile_commands.json"
+    "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
 }

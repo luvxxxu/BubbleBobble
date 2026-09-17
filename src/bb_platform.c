@@ -74,8 +74,10 @@ bool bb_platform_remove(const char *path)
 
 void bb_platform_free_arguments(BBArguments *arguments)
 {
+    int i;
+
     if (arguments->owned && arguments->values) {
-        for (int i = 0; i < arguments->count; ++i) free(arguments->values[i]);
+        for (i = 0; i < arguments->count; ++i) free(arguments->values[i]);
         free(arguments->values);
     }
     memset(arguments, 0, sizeof *arguments);
@@ -83,20 +85,28 @@ void bb_platform_free_arguments(BBArguments *arguments)
 
 bool bb_platform_arguments(int argc, char **argv, BBArguments *out)
 {
+#if defined(_WIN32)
+    int count;
+    wchar_t **wide;
+    bool ok;
+    int i;
+    int size;
+#endif
+
     out->count = argc;
     out->values = argv;
     out->owned = false;
 #if defined(_WIN32)
-    int count = 0;
-    wchar_t **wide = CommandLineToArgvW(GetCommandLineW(), &count);
+    count = 0;
+    wide = CommandLineToArgvW(GetCommandLineW(), &count);
     if (!wide) return false;
     out->values = calloc((size_t)count + 1, sizeof *out->values);
     out->count = count;
     out->owned = true;
     if (!out->values) { LocalFree(wide); return false; }
-    bool ok = true;
-    for (int i = 0; i < count; ++i) {
-        int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide[i], -1, NULL, 0, NULL, NULL);
+    ok = true;
+    for (i = 0; i < count; ++i) {
+        size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide[i], -1, NULL, 0, NULL, NULL);
         if (size <= 0 || size > BB_PATH_CAP) { ok = false; break; }
         out->values[i] = malloc((size_t)size);
         if (!out->values[i] || !from_wide(wide[i], out->values[i], (size_t)size)) { ok = false; break; }
@@ -110,21 +120,29 @@ bool bb_platform_arguments(int argc, char **argv, BBArguments *out)
 bool bb_platform_asset_dir(char *out, size_t capacity)
 {
     char executable[BB_PATH_CAP];
+    char *separator;
 #if defined(_WIN32)
     wchar_t wide_path[BB_PATH_CAP];
-    DWORD n = GetModuleFileNameW(NULL, wide_path, BB_PATH_CAP);
+    DWORD n;
+    char *backslash;
+
+    n = GetModuleFileNameW(NULL, wide_path, BB_PATH_CAP);
     if (n == 0 || n >= BB_PATH_CAP || !from_wide(wide_path, executable, sizeof executable)) return false;
 #elif defined(__APPLE__)
-    uint32_t n = (uint32_t)sizeof executable;
+    uint32_t n;
+
+    n = (uint32_t)sizeof executable;
     if (_NSGetExecutablePath(executable, &n) != 0) return false;
 #else
-    ssize_t n = readlink("/proc/self/exe", executable, sizeof executable - 1);
+    ssize_t n;
+
+    n = readlink("/proc/self/exe", executable, sizeof executable - 1);
     if (n < 0 || (size_t)n >= sizeof executable - 1) return false;
     executable[n] = '\0';
 #endif
-    char *separator = strrchr(executable, '/');
+    separator = strrchr(executable, '/');
 #if defined(_WIN32)
-    char *backslash = strrchr(executable, '\\');
+    backslash = strrchr(executable, '\\');
     if (backslash && (!separator || backslash > separator)) separator = backslash;
 #endif
     if (!separator) return false;
@@ -148,10 +166,14 @@ bool bb_platform_score_path(char *out, size_t capacity)
     char parent[BB_PATH_CAP], directory[BB_PATH_CAP];
 #if defined(_WIN32)
     wchar_t wide_parent[BB_PATH_CAP];
-    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", wide_parent, BB_PATH_CAP);
+    DWORD n;
+
+    n = GetEnvironmentVariableW(L"LOCALAPPDATA", wide_parent, BB_PATH_CAP);
     if (n == 0 || n >= BB_PATH_CAP || !from_wide(wide_parent, parent, sizeof parent)) return false;
 #else
-    const char *home_dir = getenv("HOME");
+    const char *home_dir;
+
+    home_dir = getenv("HOME");
     if (!home_dir || !copy_path(parent, sizeof parent, home_dir)) return false;
 #if defined(__APPLE__)
     if (!bb_path_join(directory, sizeof directory, parent, "Library") || !make_directory(directory)) return false;
@@ -166,11 +188,13 @@ void bb_scores_insert(BbScore scores[BB_SCORE_COUNT], size_t *count, BbScore sco
 {
     size_t length = *count < BB_SCORE_COUNT ? *count : BB_SCORE_COUNT;
     size_t position = 0;
+    size_t i;
+
     while (position < length && (scores[position].score > score.score ||
            (scores[position].score == score.score && scores[position].round >= score.round))) ++position;
     if (position >= BB_SCORE_COUNT) return;
     if (length < BB_SCORE_COUNT) ++length;
-    for (size_t i = length - 1; i > position; --i) scores[i] = scores[i - 1];
+    for (i = length - 1; i > position; --i) scores[i] = scores[i - 1];
     scores[position] = score;
     scores[position].name[3] = '\0';
     *count = length;
@@ -178,19 +202,32 @@ void bb_scores_insert(BbScore scores[BB_SCORE_COUNT], size_t *count, BbScore sco
 
 bool bb_scores_load(const char *path, BbScore scores[BB_SCORE_COUNT], size_t *out_count)
 {
-    *out_count = 0;
-    FILE *file = bb_platform_fopen(path, "rb");
-    size_t count = 0;
-    size_t consumed = 0;
+    FILE *file;
+    size_t count;
+    size_t consumed;
     char line[128];
+    int lines;
+    char *cursor;
+    char *end;
+    unsigned long score;
+    unsigned long round;
+    int next;
+    size_t name_length;
+    bool valid;
+    size_t i;
+    BbScore record;
+    bool ok;
+
+    *out_count = 0;
+    file = bb_platform_fopen(path, "rb");
+    count = 0;
+    consumed = 0;
     if (!file) return errno == ENOENT;
     /* 손상되었거나 외부에서 수정된 파일도 읽기 범위를 제한한다. */
-    for (int lines = 0; lines < 512 && consumed < 65536 && fgets(line, sizeof line, file); ++lines) {
-        char *cursor = line, *end;
-        unsigned long score, round;
+    for (lines = 0; lines < 512 && consumed < 65536 && fgets(line, sizeof line, file); ++lines) {
+        cursor = line;
         consumed += strlen(line);
         if (!strchr(line, '\n') && !feof(file)) {
-            int next;
             while (consumed < 65536 && (next = fgetc(file)) != EOF) {
                 ++consumed;
                 if (next == '\n') break;
@@ -206,17 +243,22 @@ bool bb_scores_load(const char *path, BbScore scores[BB_SCORE_COUNT], size_t *ou
         round = strtoul(cursor, &end, 10);
         if (errno || round > 3 || *end != ' ') continue;
         cursor = end + 1;
-        size_t name_length = strcspn(cursor, "\r\n");
+        name_length = strcspn(cursor, "\r\n");
         if (name_length != 3) continue;
-        bool valid = true;
-        for (size_t i = 0; i < 3; ++i)
+        valid = true;
+        for (i = 0; i < 3; ++i)
             if (!((cursor[i] >= 'A' && cursor[i] <= 'Z') ||
                   (cursor[i] >= '0' && cursor[i] <= '9') || cursor[i] == '.')) valid = false;
         if (!valid) continue;
-        BbScore record = { (unsigned)score, (int)round, {cursor[0], cursor[1], cursor[2], '\0'} };
+        record.score = (unsigned)score;
+        record.round = (int)round;
+        record.name[0] = cursor[0];
+        record.name[1] = cursor[1];
+        record.name[2] = cursor[2];
+        record.name[3] = '\0';
         bb_scores_insert(scores, &count, record);
     }
-    bool ok = consumed <= 65536 && fgetc(file) == EOF && !ferror(file);
+    ok = consumed <= 65536 && fgetc(file) == EOF && !ferror(file);
     if (fclose(file) != 0) ok = false;
     if (ok) *out_count = count;
     return ok;
@@ -225,17 +267,24 @@ bool bb_scores_load(const char *path, BbScore scores[BB_SCORE_COUNT], size_t *ou
 bool bb_scores_save(const char *path, const BbScore *scores, size_t count)
 {
     char temporary[BB_PATH_CAP];
+    int n;
+    FILE *file;
+    bool ok;
+    size_t i;
+#if defined(_WIN32)
+    wchar_t wide_temp[BB_PATH_CAP], wide_path[BB_PATH_CAP];
+#endif
+
     if (!path[0] || count > BB_SCORE_COUNT) return false;
-    int n = snprintf(temporary, sizeof temporary, "%s.tmp", path);
+    n = snprintf(temporary, sizeof temporary, "%s.tmp", path);
     if (n < 0 || (size_t)n >= sizeof temporary) return false;
-    FILE *file = bb_platform_fopen(temporary, "wb");
+    file = bb_platform_fopen(temporary, "wb");
     if (!file) return false;
-    bool ok = true;
-    for (size_t i = 0; i < count; ++i)
+    ok = true;
+    for (i = 0; i < count; ++i)
         if (fprintf(file, "%u %d %.3s\n", scores[i].score, scores[i].round, scores[i].name) < 0) ok = false;
     if (fclose(file) != 0) ok = false;
 #if defined(_WIN32)
-    wchar_t wide_temp[BB_PATH_CAP], wide_path[BB_PATH_CAP];
     if (!to_wide(temporary, wide_temp) || !to_wide(path, wide_path)) return false;
     if (ok) ok = MoveFileExW(wide_temp, wide_path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
     if (!ok) DeleteFileW(wide_temp);
