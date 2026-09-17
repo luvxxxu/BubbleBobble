@@ -291,8 +291,18 @@ static void bb_draw_bitmap(BBBitmap *source, Rectangle src, Rectangle dst)
     blend.BlendFlags = 0;
     blend.SourceConstantAlpha = 255;
     blend.AlphaFormat = AC_SRC_ALPHA;
-    AlphaBlend(bb_current_dc, (int)dst.x, (int)dst.y, (int)dst.width, (int)dst.height,
-               draw_source->dc, source_x, source_y, source_width, source_height, blend);
+    /* GDI TextOut/FillRect do not maintain alpha in our 32-bit render target.
+     * The target is cleared to a complete RGB frame every draw, so its final
+     * presentation must copy RGB directly instead of treating those alpha
+     * bytes as transparency. PNG sprite textures still use AlphaBlend. */
+    if (source->render_target) {
+        StretchBlt(bb_current_dc, (int)dst.x, (int)dst.y, (int)dst.width, (int)dst.height,
+                   draw_source->dc, source_x, source_y, source_width, source_height, SRCCOPY);
+    }
+    else {
+        AlphaBlend(bb_current_dc, (int)dst.x, (int)dst.y, (int)dst.width, (int)dst.height,
+                   draw_source->dc, source_x, source_y, source_width, source_height, blend);
+    }
     bb_release_bitmap(&flipped);
 }
 
