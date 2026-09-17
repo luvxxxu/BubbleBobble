@@ -10,7 +10,9 @@
 #endif
 
 #if defined(_MSC_VER) && !defined(__clang__)
-/* C4701 is a false positive in stb_vorbis' bounded seek interpolation. */
+/* stb_vorbis is isolated in this translation unit; keep its diagnostics local. */
+#pragma warning(push, 0)
+/* C4701 is emitted after flow analysis, so disable it explicitly as well. */
 #pragma warning(disable : 4701)
 #endif
 
