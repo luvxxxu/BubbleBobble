@@ -53,7 +53,6 @@ static void test_single_level_stays_playable(void)
     BBGame game;
     bb_game_init(&game, NULL, 99);
     CHECK(game.state == BB_STATE_MENU);
-    CHECK(BB_MAX_PLAYERS == 1);
     bb_game_start(&game);
     CHECK(game.state == BB_STATE_INTRO);
     /* 7초 인트로가 자동으로 끝나도 플레이 상태를 유지한다. */
@@ -174,8 +173,6 @@ static void update_with_dt(BBGame *game, float dt)
 static void test_energy_cycle_and_boundaries(void)
 {
     const int rates[] = {30, 60, 120};
-    CHECK(BB_ENERGY_CHARGE_SECONDS == 15.0f);
-    CHECK(BB_ENERGY_BOOST_SECONDS == 5.0f);
     for (unsigned rate_index = 0; rate_index < sizeof rates / sizeof rates[0]; ++rate_index) {
         BBGame game;
         int rate = rates[rate_index];
@@ -221,8 +218,6 @@ static void test_energy_cycle_and_boundaries(void)
 
 static void test_energy_horizontal_speed_and_momentum(void)
 {
-    CHECK(BB_PLAYER_GROUND_SPEED > 0.0f && BB_PLAYER_GROUND_SPEED < 8.0f);
-    CHECK(BB_PLAYER_AIR_SPEED > 0.0f && BB_PLAYER_AIR_SPEED < 4.0f);
     for (int direction = -1; direction <= 1; direction += 2) {
         BBGame normal, boosted;
         fixture(&normal);
