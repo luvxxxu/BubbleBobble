@@ -31,7 +31,7 @@ Apple Silicon에서는 Apple Command Line Tools와 CMake를 설치한 뒤 실행
 open build/package/macos-arm64/BubbleBobble.app
 ```
 
-Windows에서는 C 컴파일러와 Windows SDK를 포함한 Visual Studio 2022 또는 Build Tools를 설치한 뒤 PowerShell에서 실행합니다.
+Windows에서는 C 컴파일러와 Windows SDK를 포함한 Visual Studio 2026 또는 Build Tools, CMake 4.2 이상을 설치한 뒤 PowerShell에서 실행합니다.
 
 ```powershell
 ./scripts/build-windows.ps1 -Architecture x86

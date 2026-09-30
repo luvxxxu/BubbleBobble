@@ -1,5 +1,6 @@
 {
     "cmake.useCMakePresets": "always",
-    "cmake.configureOnOpen": false,
+    "cmake.configureOnOpen": true,
+    "cmake.configureOnEdit": false,
     "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
 }

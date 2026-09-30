@@ -5,6 +5,7 @@
 #include "bb_raylib_types.h"
 
 #include <errno.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -253,8 +254,8 @@ static int run_game(int argc, char **argv)
         if (!smoke_frames && screenshot && frames == 1) screenshot_ok = save_screenshot(canvas, screenshot);
     }
     smoke_ok = !smoke_frames || frames >= smoke_frames;
-    if (smoke_frames) printf("Smoke %s: frames=%d ticks=" BB_UINT64_PRINTF " level=1 state=%d\n", smoke_ok ? "completed" : "interrupted", frames,
-                             BB_UINT64_CAST(game.ticks), (int)game.state);
+    if (smoke_frames) printf("Smoke %s: frames=%d ticks=%" PRIu64 " level=1 state=%d\n", smoke_ok ? "completed" : "interrupted", frames,
+                             game.ticks, (int)game.state);
     UnloadRenderTexture(canvas);
     bb_assets_unload(&assets);
     if (audio_ready) CloseAudioDevice();

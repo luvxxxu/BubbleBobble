@@ -1,8 +1,8 @@
 # C 포트 빌드
 
-최신 CMake 애플리케이션과 게임플레이 코어에는 C11 컴파일러가 필요합니다. C++ 컴파일러, C++ 게임 소스, STL, C++ 런타임은 필요하지 않습니다. CMake는 해시로 고정한 raylib 5.5 소스 압축 파일을 빌드 트리에 내려받습니다. 번들 GLFW, 이미지·글꼴 디코더, miniaudio가 나머지 의존성을 제공합니다. GLFW는 macOS에서 네이티브 Objective-C Cocoa 인터페이스를 사용합니다. 게임과 플랫폼 소스는 C입니다. 별도의 `legacy/vs2010` 솔루션은 VS2010 C 컴파일러가 처리할 수 있는 문법과 Win32/GDI+ C 호환 렌더러를 사용합니다.
+애플리케이션과 게임플레이 코어에는 C11 컴파일러가 필요합니다. C++ 게임 소스, STL, C++ 런타임은 필요하지 않습니다. CMake는 해시로 고정한 raylib 5.5 소스 압축 파일을 빌드 트리에 내려받습니다. 번들 GLFW, 이미지·글꼴 디코더, miniaudio가 나머지 의존성을 제공합니다. GLFW는 macOS에서 네이티브 Objective-C Cocoa 인터페이스를 사용합니다. 게임과 플랫폼 소스는 C입니다.
 
-필수 조건은 CMake 3.24 이상과 플랫폼 컴파일러입니다. 첫 데스크톱 구성에는 GitHub에 HTTPS로 접근할 수 있어야 합니다. 이후 빌드는 내려받은 의존성을 재사용합니다. `BB_BUILD_GAME=OFF`는 내려받은 의존성, 윈도 서버, 오디오 장치 없이 실행할 수 있습니다.
+공통 필수 조건은 CMake 3.24 이상과 플랫폼 컴파일러입니다. Windows의 VS2026 프리셋은 CMake 4.2 이상이 필요합니다. 첫 데스크톱 구성에는 GitHub에 HTTPS로 접근할 수 있어야 합니다. 이후 빌드는 내려받은 의존성을 재사용합니다. `BB_BUILD_GAME=OFF`는 내려받은 의존성, 윈도 서버, 오디오 장치 없이 실행할 수 있습니다.
 
 ## macOS arm64
 
@@ -17,7 +17,7 @@ Apple Command Line Tools(`xcode-select --install`)와 CMake를 설치한 뒤 실
 
 ## Windows x86 및 x86_64 / AMD64
 
-C 컴파일러와 Windows SDK를 제공하는 **Desktop development with C++** 워크로드를 포함해 Visual Studio 2022 또는 Build Tools를 설치하고, CMake 3.24 이상을 설치합니다. 이 워크로드 이름과 달리 C++ 소스는 컴파일하지 않습니다. 저장소에서 PowerShell을 열어 실행합니다.
+C 컴파일러와 Windows SDK를 제공하는 **Desktop development with C++** 워크로드를 포함해 Visual Studio 2026 또는 Build Tools를 설치하고, CMake 4.2 이상을 설치합니다. VS2026용 CMake 생성기는 4.2부터 제공됩니다. 이 워크로드 이름과 달리 게임은 C 소스로 컴파일합니다. 저장소에서 PowerShell을 열어 실행합니다.
 
 ```powershell
 ./scripts/build-windows.ps1 -Architecture x86
@@ -30,13 +30,11 @@ C 컴파일러와 Windows SDK를 제공하는 **Desktop development with C++** �
 
 ### Windows의 VS Code
 
-저장소를 Windows에서 처음 열면 `.vscode/extensions.json`이 CMake Tools와 C/C++ 확장을 제안합니다. 확장을 설치한 뒤 **실행 및 디버그**에서 `BubbleBobble (Windows x64)` 또는 `BubbleBobble (Windows x86)`을 선택하고 F5를 누르세요. 각 구성은 대응하는 CMake 프리셋을 구성·빌드한 뒤 `build/windows-*/bin/Release/BubbleBobble.exe`를 그 실행 파일 옆의 `assets` 폴더를 작업 디렉터리로 하여 시작합니다. macOS용 구성은 Windows에서 선택하지 마세요.
+저장소를 Windows에서 처음 열면 `.vscode/extensions.json`이 CMake Tools와 C/C++ 확장을 제안합니다. 확장을 설치한 뒤 **실행 및 디버그**에서 `BubbleBobble (Windows x64)` 또는 `BubbleBobble (Windows x86)`을 선택하고 F5를 누르세요. 각 구성은 대응하는 Debug CMake 프리셋을 구성·빌드한 뒤 `build/windows-debug-*/bin/Debug/BubbleBobble.exe`를 실행합니다. 실행 파일 옆의 `assets` 폴더도 함께 사용합니다. macOS용 구성은 Windows에서 선택하지 마세요.
 
-### Visual Studio 2010
+### Visual Studio 2026
 
-VS2010 SP1과 해당 x86/x64 C 도구, Windows SDK를 설치한 뒤 [legacy/vs2010/BubbleBobble.sln](../legacy/vs2010/BubbleBobble.sln)을 엽니다. 구성 관리자에서 `Release | Win32` 또는 `Release | x64`를 선택하고 빌드하세요. 결과물은 각각 `legacy/vs2010/build/Win32/Release/BubbleBobble.exe` 및 `legacy/vs2010/build/x64/Release/BubbleBobble.exe`에 생성되며, 빌드 후 이벤트가 `assets`를 자동으로 복사합니다. Release 구성은 CRT를 정적으로 링크합니다. 실행 파일만 따로 옮기지 말고 `assets` 디렉터리를 함께 유지해야 합니다.
-
-VS2010 경로는 오래된 C 컴파일러용 Win32/GDI+ 렌더러이며 키보드 입력, 그래픽과 UTF-8 에셋 경로를 지원합니다. 효과음과 반복 배경음은 Windows 기본 `waveOut` 장치와 정적으로 포함한 Ogg Vorbis 디코더를 사용하므로 별도 DirectX 또는 오디오 런타임 설치가 필요하지 않습니다. 게임패드와 스크린샷까지 포함한 전체 raylib 프런트엔드는 위의 Visual Studio 2022 CMake 경로를 사용하세요.
+Visual Studio 2026에서 저장소 루트 폴더를 열고 `windows-x64` 또는 `windows-x86` CMake 프리셋을 선택해 빌드할 수 있습니다. 이 프리셋은 VS2026의 C 컴파일러와 기본 v145 도구 집합을 사용하며, x86과 x64를 별도 빌드 디렉터리에 생성합니다. 실행 파일과 에셋을 함께 패키징하려면 위 PowerShell 스크립트를 사용하세요.
 
 ## macOS 또는 Linux에서 Windows 교차 컴파일
 
@@ -52,7 +50,7 @@ cmake --build --preset windows-cross-x64
 cmake --install build/windows-cross-x64 --prefix build/package/windows-cross-x64
 ```
 
-교차 빌드는 게임플레이·플랫폼·레거시 오디오 디코더 테스트 실행 파일과 게임을 모두 컴파일하지만 빌드 호스트에서 Windows 바이너리를 실행하지는 않습니다. Windows에서 테스트(`bin/bb_game_tests.exe`, `bin/bb_platform_tests.exe platform-test-file.txt`, `bin/bb_audio_decode_tests.exe`)를 실행하거나 Windows CI 작업을 사용하세요. 교차 링크 성공만으로는 Windows 그래픽, 오디오, 입력 동작을 검증할 수 없습니다.
+교차 빌드는 게임플레이·레벨·플랫폼 테스트 실행 파일과 게임을 모두 컴파일하지만 빌드 호스트에서 Windows 바이너리를 실행하지는 않습니다. Windows에서 테스트(`bin/bb_game_tests.exe`, `bin/bb_level_tests.exe`, `bin/bb_platform_tests.exe platform-test-file.txt`)를 실행하거나 Windows CI 작업을 사용하세요. 교차 링크 성공만으로는 Windows 그래픽, 오디오, 입력 동작을 검증할 수 없습니다.
 
 ## 그래픽 의존성 없는 게임플레이 테스트
 
@@ -67,7 +65,7 @@ sanitizer 프리셋에는 macOS/Linux의 Clang 또는 GCC가 필요합니다. �
 
 ## 빌드 범위와 재현성
 
-- `bb_core`는 그래픽에 의존하지 않는 C11 정적 라이브러리이며 `bb_game_tests`와 `bb_level_tests`가 CTest로 검사합니다. `bb_platform_tests`는 빌드 디렉터리 안의 전용 임시 파일로 경로와 UTF-8 파일 열기를 검사합니다. `bb_audio_decode_tests`는 실제 WAV·OGG 에셋과 손상·잘림 입력을 사용해 VS2010 경로의 디코더를 장치 없이 검사합니다.
+- `bb_core`는 그래픽에 의존하지 않는 C11 정적 라이브러리이며 `bb_game_tests`와 `bb_level_tests`가 CTest로 검사합니다. `bb_platform_tests`는 빌드 디렉터리 안의 전용 임시 파일로 경로와 UTF-8 파일 열기를 검사합니다. 데스크톱 빌드의 `desktop_assets` 테스트는 실제 raylib 경로로 이미지와 WAV·OGG를 장치 없이 디코딩하고 글꼴 파일의 존재를 검사합니다.
 - `BubbleBobble`은 `main.c`, `bb_render.c`, `bb_platform.c`, `bb_core`로 구성됩니다. 플랫폼 통합은 `bb_platform.h` 뒤에 둡니다.
 - `cmake/PureCRaylib.cmake`는 내려받은 raylib 루트의 한정되지 않은 `project(raylib)`를 `project(raylib LANGUAGES C)`로 바꿉니다. 이는 CMake가 불필요하게 C++ 컴파일러를 탐색하지 않게 할 뿐 의존성 구현은 바꾸지 않습니다. 패치는 변경 전 기대한 소스인지 검증합니다.
 - 의존성이 C++ 또는 Objective-C++를 활성화하면 구성이 실패합니다. CTest도 `src/`와 `tests/`에서 C++ 소스 확장자를 거부합니다.

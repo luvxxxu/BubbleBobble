@@ -1,7 +1,7 @@
 #ifndef BB_PLATFORM_H
 #define BB_PLATFORM_H
 
-#include "bb_compat.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 

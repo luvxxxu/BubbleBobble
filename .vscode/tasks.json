@@ -57,15 +57,9 @@
         },
         {
             "label": "CMake: Windows x64 구성",
-            "type": "process",
-            "command": "cmake",
-            "args": [
-                "--preset",
-                "windows-x64"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
+            "type": "cmake",
+            "command": "configure",
+            "preset": "windows-x64",
             "problemMatcher": "$msCompile"
         },
         {
@@ -87,15 +81,9 @@
         },
         {
             "label": "CMake: Windows x86 구성",
-            "type": "process",
-            "command": "cmake",
-            "args": [
-                "--preset",
-                "windows-x86"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
+            "type": "cmake",
+            "command": "configure",
+            "preset": "windows-x86",
             "problemMatcher": "$msCompile"
         },
         {
@@ -111,6 +99,54 @@
                 "cwd": "${workspaceFolder}"
             },
             "dependsOn": "CMake: Windows x86 구성",
+            "dependsOrder": "sequence",
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "CMake: Windows x64 디버그 구성",
+            "type": "cmake",
+            "command": "configure",
+            "preset": "windows-debug-x64",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "CMake: Windows x64 디버그 빌드",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "windows-debug-x64"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "CMake: Windows x64 디버그 구성",
+            "dependsOrder": "sequence",
+            "problemMatcher": "$msCompile",
+            "group": "build"
+        },
+        {
+            "label": "CMake: Windows x86 디버그 구성",
+            "type": "cmake",
+            "command": "configure",
+            "preset": "windows-debug-x86",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "CMake: Windows x86 디버그 빌드",
+            "type": "process",
+            "command": "cmake",
+            "args": [
+                "--build",
+                "--preset",
+                "windows-debug-x86"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "CMake: Windows x86 디버그 구성",
             "dependsOrder": "sequence",
             "problemMatcher": "$msCompile",
             "group": "build"

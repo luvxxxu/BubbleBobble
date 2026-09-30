@@ -15,20 +15,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-2022
+          - os: windows-2025-vs2026
             preset: windows-x86
-          - os: windows-2022
+          - os: windows-2025-vs2026
             preset: windows-x64
           - os: macos-15
             preset: macos-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Verify CMake supports Visual Studio 2026
+        if: startsWith(matrix.os, 'windows-')
+        shell: pwsh
+        run: |
+          $version = (cmake -E capabilities | ConvertFrom-Json).version
+          if ($version.major -lt 4 -or ($version.major -eq 4 -and $version.minor -lt 2)) {
+            throw "Visual Studio 2026 requires CMake 4.2 or newer; found $($version.string)"
+          }
       - name: Configure C-only desktop build
         run: cmake --preset ${{ matrix.preset }}
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
-      - name: Gameplay and source-language tests
+      - name: Gameplay, assets and source-language tests
         run: ctest --preset ${{ matrix.preset }}
       - name: Package executable and assets
         run: cmake --install build/${{ matrix.preset }} --config Release --prefix build/package/${{ matrix.preset }}
