@@ -5,6 +5,7 @@
 static bool raylib_recs(float ax, float ay, float aw, float ah,
                         float bx, float by, float bw, float bh)
 {
+    /* 게임 코어의 중심 좌표와 반너비/반높이를 raylib의 좌상단 사각형으로 변환한다. */
     return CheckCollisionRecs(bb_rectangle(ax - aw, ay - ah, aw * 2.0f, ah * 2.0f),
                               bb_rectangle(bx - bw, by - bh, bw * 2.0f, bh * 2.0f));
 }

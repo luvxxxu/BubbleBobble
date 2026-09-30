@@ -16,6 +16,9 @@
 #pragma warning(disable : 4701)
 #endif
 
+/* Assets enter through the game's memory/file loading path. This is the one
+ * translation unit that emits stb_vorbis's implementation and needs no stdio
+ * entry points from the vendored decoder. */
 #define STB_VORBIS_NO_STDIO
 #include "third_party/stb_vorbis.c"
 

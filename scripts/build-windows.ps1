@@ -4,6 +4,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $repoDir = Split-Path -Parent $PSScriptRoot
+# 프리셋과 상대 설치 경로를 저장소 기준으로 실행하고 호출자의 위치를 복원한다.
 Push-Location $repoDir
 try {
     $preset = "windows-$Architecture"

@@ -11,6 +11,7 @@
     <RootNamespace>BubbleBobble</RootNamespace>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <!-- v100 and explicit C compilation keep this project usable with Visual C++ 2010. -->
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType><UseDebugLibraries>true</UseDebugLibraries><CharacterSet>MultiByte</CharacterSet><PlatformToolset>v100</PlatformToolset>
   </PropertyGroup>
@@ -31,6 +32,7 @@
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'"><Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" /></ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup><OutDir>$(ProjectDir)build\$(Platform)\$(Configuration)\</OutDir><IntDir>$(ProjectDir)build\$(Platform)\$(Configuration)\obj\</IntDir><TargetName>BubbleBobble</TargetName></PropertyGroup>
+  <!-- Both configurations link the Win32 renderer/audio libraries and copy assets next to the executable. -->
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile><WarningLevel>Level4</WarningLevel><Optimization>Disabled</Optimization><RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary><PreprocessorDefinitions>WIN32;_WINDOWS;_CRT_SECURE_NO_WARNINGS;BB_VS2010=1;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\..\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><CompileAs>CompileAsC</CompileAs><AdditionalOptions>/wd4819 /wd4996 %(AdditionalOptions)</AdditionalOptions></ClCompile>
     <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation><AdditionalDependencies>gdiplus.lib;msimg32.lib;gdi32.lib;user32.lib;kernel32.lib;shell32.lib;winmm.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
@@ -42,6 +44,7 @@
     <PostBuildEvent><Command>xcopy /E /I /Y &quot;$(ProjectDir)..\..\Assets&quot; &quot;$(OutDir)assets&quot; &gt;nul</Command></PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <!-- The legacy backend replaces raylib while sharing the gameplay and presentation sources. -->
     <ClCompile Include="..\..\src\main.c" /><ClCompile Include="..\..\src\bb_game.c" /><ClCompile Include="..\..\src\bb_levels.c" /><ClCompile Include="..\..\src\bb_render.c" /><ClCompile Include="..\..\src\bb_platform.c" /><ClCompile Include="..\..\src\bb_collision_raylib.c" /><ClCompile Include="..\..\src\bb_raylib_types.c" /><ClCompile Include="bb_audio_decode.c" /><ClCompile Include="raylib_audio_win32.c" /><ClCompile Include="raylib_win32.c" /><ClCompile Include="stb_vorbis_impl.c" />
   </ItemGroup>
   <ItemGroup>

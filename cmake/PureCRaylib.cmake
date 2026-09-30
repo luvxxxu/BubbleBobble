@@ -3,10 +3,12 @@ if(NOT DEFINED RAYLIB_SOURCE_DIR)
 endif()
 set(raylib_cmake "${RAYLIB_SOURCE_DIR}/CMakeLists.txt")
 file(READ "${raylib_cmake}" contents)
+# FetchContent가 패치를 다시 실행해도 같은 결과가 되도록 이미 적용된 경우 종료한다.
 if(contents MATCHES "project\\(raylib LANGUAGES C\\)")
     return()
 endif()
 string(FIND "${contents}" "project(raylib)" match)
+# 고정 버전의 예상 선언이 바뀌면 다른 위치를 임의로 바꾸지 않도록 중단한다.
 if(match EQUAL -1)
     message(FATAL_ERROR "Pinned raylib root project() differs; review before updating this patch")
 endif()

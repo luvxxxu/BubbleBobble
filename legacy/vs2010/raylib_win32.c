@@ -29,6 +29,8 @@
 #include "raylib.h"
 #include "bb_platform.h"
 
+/* Texture ID zero means invalid. Remaining IDs own one HBITMAP/DC pair in
+ * this fixed table, including off-screen render targets. */
 #define BB_RESOURCE_COUNT 128
 #define BB_DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 ((HANDLE)(LONG_PTR)-4)
 #ifndef WM_DPICHANGED
@@ -246,6 +248,8 @@ static bool bb_set_window_style(HWND window, LONG style)
     return previous != 0 || GetLastError() == ERROR_SUCCESS;
 }
 
+/* Snapshot key state before dispatching this frame's messages. The key and
+ * character queues retain discrete presses while IsKeyPressed uses the edge. */
 static void bb_pump_messages(void)
 {
     MSG message;
@@ -280,6 +284,8 @@ static void bb_queue_character(unsigned int codepoint)
         bb_char_queue[bb_char_queue_count++] = (int)codepoint;
 }
 
+/* WM_CHAR delivers UTF-16 code units. Pair surrogates before exposing Unicode
+ * code points through GetCharPressed, replacing unmatched units. */
 static void bb_queue_utf16_unit(unsigned int unit)
 {
     if (unit >= 0xD800u && unit <= 0xDBFFu) {
@@ -330,6 +336,8 @@ static LRESULT CALLBACK bb_window_proc(HWND window, UINT message, WPARAM wparam,
         }
         return 0;
     }
+    /* WM_SIZE can arrive during window creation and repeated drag updates.
+     * Allocate the replacement backbuffer after the message pump drains. */
     if (message == WM_SIZE && wparam != SIZE_MINIMIZED) {
         int width;
         int height;
@@ -404,6 +412,8 @@ static BBBitmap bb_make_bitmap(int width, int height)
     memset(&info, 0, sizeof info);
     info.bmiHeader.biSize = sizeof info.bmiHeader;
     info.bmiHeader.biWidth = width;
+    /* Negative DIB height puts the first row at the top, matching game-space
+     * coordinates and avoiding a per-frame vertical copy. */
     info.bmiHeader.biHeight = -height;
     info.bmiHeader.biPlanes = 1;
     info.bmiHeader.biBitCount = 32;
@@ -473,6 +483,8 @@ static bool bb_apply_pending_resize(void)
     return true;
 }
 
+/* A successful insertion transfers both GDI handles to the resource table;
+ * a full table releases them before returning the invalid ID. */
 static unsigned int bb_store_bitmap(BBBitmap bitmap)
 {
     unsigned int index;
@@ -509,6 +521,8 @@ static wchar_t *bb_utf8_to_wide(const char *value)
     return wide;
 }
 
+/* GDI+ decodes the asset, then the copied HBITMAP outlives the temporary
+ * GDI+ image. The caller owns that HBITMAP and must DeleteObject it. */
 static HBITMAP bb_load_hbitmap(const char *path, int *width, int *height)
 {
     BBGdipImage *image;
@@ -788,6 +802,8 @@ void EndDrawing(void)
         BitBlt(window_dc, 0, 0, bb_screen.width, bb_screen.height, bb_screen.dc, 0, 0, SRCCOPY);
         ReleaseDC(bb_window, window_dc);
     }
+    /* This software backend presents the backbuffer, then applies coarse
+     * Sleep pacing. GetFrameTime includes both drawing and the sleep. */
     QueryPerformanceCounter(&now);
     elapsed = (double)(now.QuadPart - bb_last_tick.QuadPart) / (double)bb_frequency.QuadPart;
     target_milliseconds = bb_target_fps > 0 ? (DWORD)(1000 / bb_target_fps) : 0;
@@ -884,6 +900,7 @@ Image LoadImageFromTexture(Texture2D texture)
     if (source == NULL) return image;
     stored = (BBImage *)malloc(sizeof *stored);
     if (stored == NULL) return image;
+    /* Image owns a copy, so UnloadImage and UnloadTexture can run separately. */
     stored->bitmap = (HBITMAP)CopyImage(source->bitmap, IMAGE_BITMAP, 0, 0, LR_CREATEDIBSECTION);
     if (stored->bitmap == NULL) {
         free(stored);
@@ -899,6 +916,8 @@ Image LoadImageFromTexture(Texture2D texture)
 }
 
 bool IsImageValid(Image image) { return image.data != NULL && image.width > 0 && image.height > 0; }
+/* The only game caller is screenshot export, which this legacy backend does
+ * not implement; no in-memory bitmap flip is needed for supported rendering. */
 void ImageFlipVertical(Image *image) { (void)image; }
 
 Color *LoadImageColors(Image image)
@@ -957,6 +976,7 @@ void UnloadImage(Image image)
     }
 }
 
+/* PNG screenshot export has no GDI encoder path in this compatibility shim. */
 unsigned char *ExportImageToMemory(Image image, const char *fileType, int *fileSize)
 {
     (void)image;
@@ -1056,6 +1076,8 @@ void DrawTextureRec(Texture2D texture, Rectangle source, Vector2 position, Color
 
 void DrawTexturePro(Texture2D texture, Rectangle source, Rectangle destination, Vector2 origin, float rotation, Color tint)
 {
+    /* Current game calls are axis-aligned with zero origin/rotation and WHITE
+     * tint. This GDI subset handles source flipping and destination scaling. */
     (void)origin;
     (void)rotation;
     (void)tint;
@@ -1202,6 +1224,8 @@ Font LoadFontEx(const char *fileName, int fontSize, int *codepoints, int codepoi
     font.glyphCount = codepointCount > 0 ? codepointCount : 95;
     font.texture.id = 1;
     font.glyphs = resource;
+    /* GDI silently substitutes unavailable faces. Reject substitution so
+     * layout uses the intended private font or the explicit fallback. */
     if (bb_font_handle(font, font.baseSize) == NULL ||
         !bb_font_has_face(resource->handle, L"Nintendo NES Font")) {
         if (resource->handle != NULL) DeleteObject(resource->handle);
@@ -1299,6 +1323,7 @@ void DrawTextEx(Font font, const char *text, Vector2 position, float fontSize, f
     }
     else {
         cursor = position.x;
+        /* Spacing is per Unicode character, not per UTF-16 code unit. */
         for (index = 0; index < length; index += units) {
             units = 1;
             unit = (unsigned int)wide_text[index];

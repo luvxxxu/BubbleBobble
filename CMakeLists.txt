@@ -21,6 +21,7 @@ option(BB_ENABLE_SANITIZERS "Enable AddressSanitizer and UndefinedBehaviorSaniti
 include(CTest)
 
 function(bb_configure_c_target target)
+    # 자체 C 타깃에만 엄격한 경고를 적용해 외부 raylib의 빌드 옵션을 건드리지 않는다.
     set_target_properties(${target} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /utf-8)
@@ -51,6 +52,7 @@ function(bb_configure_c_target target)
     endif()
 endfunction()
 
+# 핵심 게임 상태는 그래픽 백엔드와 분리해 헤드리스 테스트에서도 사용한다.
 add_library(bb_core STATIC src/bb_game.c src/bb_levels.c)
 target_include_directories(bb_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 bb_configure_c_target(bb_core)
@@ -68,6 +70,7 @@ if(BUILD_TESTING)
     add_executable(bb_platform_tests tests/test_platform.c src/bb_platform.c)
     target_include_directories(bb_platform_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     bb_configure_c_target(bb_platform_tests)
+    # 디코더 테스트는 VS2010용 구현을 같은 소스로 검사한다.
     add_executable(bb_audio_decode_tests
         tests/test_audio_decode.c
         legacy/vs2010/bb_audio_decode.c
@@ -105,6 +108,7 @@ if(BUILD_TESTING)
 endif()
 
 if(BB_BUILD_GAME)
+    # 다운로드한 raylib은 고정 버전과 해시로 제한하고 정적 데스크톱 빌드로 구성한다.
     include(FetchContent)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static dependencies" FORCE)
     set(BUILD_EXAMPLES OFF CACHE BOOL "Disable raylib examples" FORCE)
@@ -149,6 +153,7 @@ if(BB_BUILD_GAME)
 endif()
 
 get_property(bb_languages GLOBAL PROPERTY ENABLED_LANGUAGES)
+# 의존성 구성 과정에서도 C++가 암묵적으로 활성화되지 않았는지 확인한다.
 if("CXX" IN_LIST bb_languages OR "OBJCXX" IN_LIST bb_languages)
     message(FATAL_ERROR "The pure C build must not enable C++ or Objective-C++")
 endif()

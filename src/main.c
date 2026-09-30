@@ -62,6 +62,7 @@ static BBInput player_input(void)
         input.jump = input.jump || pad_pressed(0, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT) || pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP);
         input.fire = input.fire || pad_pressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     }
+    /* 키보드, 패드 방향키, 아날로그 스틱을 합쳐도 코어 입력 범위를 넘지 않게 한다. */
     if (input.move < -1) input.move = -1;
     if (input.move > 1) input.move = 1;
     return input;
@@ -100,6 +101,7 @@ static void score_input(BBUI *ui, BBGame *game, bool up, bool down, bool confirm
     record.round = game->level + 1;
     memcpy(record.name, ui->initials, sizeof record.name);
     bb_scores_insert(ui->scores, &ui->score_count, record);
+    /* 자동 실행은 실제 사용자 점수 파일에 기록하지 않는다. */
     if (!smoke && (!score_path[0] || !bb_scores_save(score_path, ui->scores, ui->score_count))) {
         ui->save_failed = true;
         fprintf(stderr, "Could not save leaderboard to %s\n", score_path);
@@ -126,6 +128,7 @@ static bool save_screenshot(RenderTexture2D canvas, const char *path)
     bool ok;
     image = LoadImageFromTexture(canvas.texture);
     if (!image.data) return false;
+    /* 렌더 텍스처의 읽기 방향을 화면과 맞춘 뒤 PNG로 인코딩한다. */
     ImageFlipVertical(&image);
     size = 0;
     png = ExportImageToMemory(image, ".png", &size);
@@ -191,6 +194,7 @@ static int run_game(int argc, char **argv)
     }
     SetTraceLogLevel(LOG_WARNING);
     bb_assets_install_file_loader();
+    /* 이미지와 사운드는 장치 없이 디코딩해 검증하므로 창 생성 전에 실패를 알릴 수 있다. */
     if (!bb_assets_validate(asset_directory, maps)) return EXIT_FAILURE;
     if (validate_only) {
         printf("Validated %d playable maps, original map reference, single-player sprite sheets/images, font, 3 WAV sounds and OGG music.\n", BB_LEVEL_COUNT);
@@ -204,6 +208,7 @@ static int run_game(int argc, char **argv)
         fprintf(stderr, "User score directory unavailable; scores remain in memory.\n");
         ui.save_failed = true;
     }
+    /* 읽기 실패 후에는 빈 경로로 만들어 이후의 영구 저장도 막는다. */
     if (score_path[0]) {
         if (!bb_scores_load(score_path, ui.scores, &ui.score_count)) {
             ui.save_failed = true;
@@ -274,11 +279,13 @@ static int run_game(int argc, char **argv)
         simulate = !ui.paused && (IsWindowFocused() || smoke_frames > 0) &&
                    game.state != BB_STATE_MENU && game.state != BB_STATE_SCORE;
         if (simulate) {
+            /* 가변 렌더 프레임을 120Hz 고정 시뮬레이션 단계로 누적한다. */
             elapsed = smoke_frames ? 1.0f / 60.0f : GetFrameTime();
             if (elapsed > 0.25f) elapsed = 0.25f;
             accumulator += elapsed;
             input = player_input();
             pending.move = input.move;
+            /* 짧게 눌렀다 뗀 동작도 다음 고정 단계까지 보존한다. */
             pending.jump = pending.jump || input.jump;
             pending.fire = pending.fire || input.fire;
             while (accumulator >= (double)BB_FIXED_DT) {
@@ -288,6 +295,7 @@ static int run_game(int argc, char **argv)
                     pending.fire = game.ticks % 50u == 0;
                 }
                 bb_game_update(&game, &pending, BB_FIXED_DT);
+                /* 같은 틱의 이동 결과에 대해 충돌과 상태 전환을 한 번 처리한다. */
                 bb_game_check_bump(&game);
                 bb_audio_events(&assets, game.events);
                 pending.jump = false;
@@ -301,6 +309,7 @@ static int run_game(int argc, char **argv)
         BeginTextureMode(canvas);
         bb_draw_game(&assets, &game, &ui);
         EndTextureMode();
+        /* 256x224 화면을 가능한 한 정수 배율로 중앙에 확대해 픽셀 경계를 유지한다. */
         scale_x = (float)GetScreenWidth() / BB_SCREEN_WIDTH;
         scale_y = (float)GetScreenHeight() / BB_SCREEN_HEIGHT;
         scale = fminf(scale_x, scale_y);
@@ -309,6 +318,7 @@ static int run_game(int argc, char **argv)
         height = BB_SCREEN_HEIGHT * scale;
         BeginDrawing();
         ClearBackground(bb_color(12, 12, 12, 255));
+        /* raylib 렌더 텍스처는 표시할 때 세로 방향을 뒤집어야 한다. */
         DrawTexturePro(canvas.texture, bb_rectangle(0, 0, BB_SCREEN_WIDTH, -BB_SCREEN_HEIGHT),
                        bb_rectangle(((float)GetScreenWidth() - width) / 2, ((float)GetScreenHeight() - height) / 2, width, height),
                        bb_vector2(0, 0), 0, WHITE);

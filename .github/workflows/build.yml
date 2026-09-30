@@ -9,6 +9,7 @@ permissions:
   contents: read
 
 jobs:
+  # 배포 대상별로 같은 빌드·테스트·에셋 설치 과정을 수행한다.
   desktop:
     strategy:
       fail-fast: false
@@ -37,6 +38,7 @@ jobs:
           path: build/package/${{ matrix.preset }}/
           if-no-files-found: error
 
+  # 그래픽 백엔드 없이 순수 C 핵심 코드에 런타임 오류 검사를 적용한다.
   portable-core:
     runs-on: ubuntu-24.04
     strategy:

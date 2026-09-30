@@ -59,6 +59,8 @@ __declspec(dllimport) BBGdipStatus WINAPI GdipGetImageWidth(
 __declspec(dllimport) BBGdipStatus WINAPI GdipGetImageHeight(
     BBGdipImage *image,
     UINT *height);
+/* The HBITMAP returned here is a separate GDI object: DeleteObject owns its
+ * cleanup even after GdipDisposeImage releases the decoded GDI+ image. */
 __declspec(dllimport) BBGdipStatus WINAPI GdipCreateHBITMAPFromBitmap(
     BBGdipBitmap *bitmap,
     HBITMAP *hbitmap,

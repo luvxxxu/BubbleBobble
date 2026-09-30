@@ -30,6 +30,7 @@ Color bb_color(unsigned char r, unsigned char g, unsigned char b, unsigned char 
 
 Texture2D bb_empty_texture(void)
 {
+    /* raylib 구조체의 모든 필드를 초기화해 리소스 유효성 검사에 넘긴다. */
     Texture2D value;
     memset(&value, 0, sizeof value);
     return value;

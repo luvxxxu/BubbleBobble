@@ -51,6 +51,7 @@ static void test_wav_chunks(void)
     BBAudioPcm pcm;
     size_t length;
     memset(wav, 0, sizeof wav);
+    /* 알려지지 않은 홀수 길이 RIFF 청크와 뒤쪽 여분 바이트를 건너뛰어야 한다. */
     memcpy(wav, "RIFF", 4);
     write_u32le(wav + 4, 52);
     memcpy(wav + 8, "WAVE", 4);
@@ -82,6 +83,7 @@ static void test_wav_chunks(void)
     assert(pcm.samples[0] == -32768);
     assert(pcm.samples[1] == 32767);
     bb_audio_pcm_free(&pcm);
+    /* 헤더부터 샘플 직전까지의 모든 절단 길이를 거부하는지 확인한다. */
     for (length = 0; length < 60; ++length)
         assert(!bb_audio_decode_wav(wav, length, &pcm));
 }
@@ -99,12 +101,14 @@ static void test_asset(const char *relative, unsigned int frames, bool ogg)
     assert(data != NULL);
     if (ogg) assert(bb_audio_decode_ogg(data, size, &pcm));
     else assert(bb_audio_decode_wav(data, size, &pcm));
+    /* 실제 배포 에셋의 프레임 수와 형식이 디코더 변경 중에도 유지되어야 한다. */
     assert(pcm.frame_count == frames);
     assert(pcm.sample_rate == 44100);
     assert(pcm.channels == 2);
     assert(bb_audio_pcm_normalize(&pcm, 44100, 2));
     assert(pcm.frame_count == frames);
     bb_audio_pcm_free(&pcm);
+    /* Ogg 입력의 절반만 주면 완료된 오디오로 취급하지 않는다. */
     if (ogg) assert(!bb_audio_decode_ogg(data, size / 2, &pcm));
     free(data);
 }

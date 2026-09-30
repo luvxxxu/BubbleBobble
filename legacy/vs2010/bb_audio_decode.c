@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* This translation unit needs stb_vorbis declarations only. The decoder
+ * implementation is compiled once in stb_vorbis_impl.c. */
 #if defined(__clang__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wcomment"
@@ -20,6 +22,8 @@
 #pragma GCC diagnostic pop
 #endif
 
+/* Decoded and resampled audio is kept in memory; bound every PCM allocation,
+ * especially for the 32-bit VS2010 build. */
 #define BB_AUDIO_PCM_LIMIT ((size_t)256U * 1024U * 1024U)
 
 static unsigned int bb_audio_u16le(const unsigned char *data)
@@ -112,6 +116,8 @@ bool bb_audio_decode_wav(const unsigned char *data, size_t size, BBAudioPcm *out
     bits_per_sample = 0;
     have_format = false;
 
+    /* RIFF chunks are bounded by the declared RIFF size and padded to an even
+     * byte boundary. A data chunk may appear before fmt, so remember both. */
     while (offset <= scan_end && scan_end - offset >= 8) {
         payload = offset + 8;
         chunk_size = (size_t)bb_audio_u32le(data + offset + 4);
@@ -161,6 +167,8 @@ bool bb_audio_decode_wav(const unsigned char *data, size_t size, BBAudioPcm *out
     return true;
 }
 
+/* Check the page envelope before handing bytes to stb_vorbis: this backend
+ * accepts one complete logical stream, not chained or multiplexed pages. */
 static bool bb_audio_validate_ogg_container(const unsigned char *data, size_t size)
 {
     size_t offset;
@@ -243,6 +251,8 @@ bool bb_audio_decode_ogg(const unsigned char *data, size_t size, BBAudioPcm *out
         return false;
     }
 
+    /* The advertised length determines the bounded allocation. Reject a
+     * truncated decode instead of exposing uninitialized trailing samples. */
     decoded_frames = 0;
     while (decoded_frames < frame_count) {
         if (frame_count - decoded_frames > (unsigned int)(INT_MAX / info.channels)) {
@@ -301,6 +311,8 @@ bool bb_audio_pcm_normalize(BBAudioPcm *pcm, unsigned int sample_rate, unsigned 
         sample_rate == 0 || channels != 2) return false;
     if (pcm->sample_rate == sample_rate && pcm->channels == channels) return true;
 
+    /* Round up so a short final source interval is not discarded. The mixer
+     * consumes stereo PCM at one fixed rate; mono samples feed both channels. */
     output_count_64 = ((uint64_t)pcm->frame_count * (uint64_t)sample_rate +
                        (uint64_t)pcm->sample_rate - 1U) / (uint64_t)pcm->sample_rate;
     if (output_count_64 == 0 || output_count_64 > UINT_MAX) return false;

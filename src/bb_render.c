@@ -9,6 +9,7 @@
 
 static const Color player_color = {92, 230, 52, 255};
 
+/* raylib 파일 로더 콜백의 반환 버퍼는 raylib이 MemFree로 해제한다. */
 static unsigned char *read_asset(const char *path, int *size)
 {
     FILE *file;
@@ -43,6 +44,7 @@ static bool path_for(char path[BB_PATH_CAP], const char *directory, const char *
 
 bool bb_assets_validate(const char *directory, uint8_t *maps)
 {
+    /* 창과 오디오 장치를 열기 전에 이미지·오디오를 디코딩하고 폰트 파일을 확인한다. */
     static const struct { const char *name; int width, height; } images[] = {
         {"Levels.png", 32, 84}, {"BubbleCharacter.png", 96, 64},
         {"Enemys.png", 256, 192},
@@ -105,6 +107,7 @@ bool bb_assets_load(BBAssets *a, const char *directory, bool audio)
     char path[BB_PATH_CAP];
     int size;
 
+    /* 중간에 실패해도 호출자가 bb_assets_unload로 로드된 자원만 정리할 수 있다. */
     memset(a, 0, sizeof *a);
     a->player = texture(directory, "BubbleCharacter.png");
     a->enemy = texture(directory, "Enemys.png");
@@ -126,6 +129,7 @@ bool bb_assets_load(BBAssets *a, const char *directory, bool audio)
         a->jump = sound(directory, "SFX/Jump.wav");
         size = 0;
         if (!path_for(path, directory, "SFX/The Quest Begins.ogg")) return false;
+        /* 메모리에서 연 음악 스트림보다 원본 버퍼를 오래 유지한다. */
         a->music_data = read_asset(path, &size);
         if (a->music_data) a->music = LoadMusicStreamFromMemory(".ogg", a->music_data, size);
         if (!IsSoundValid(a->fire) || !IsSoundValid(a->death) || !IsSoundValid(a->jump) || !IsMusicValid(a->music)) return false;
@@ -182,6 +186,7 @@ static void sprite(Texture2D sheet, int column, int row, int size, float x, floa
     Rectangle source;
     Rectangle destination;
 
+    /* 게임 좌표는 8픽셀 타일 단위의 중심점이고, 음수 너비는 좌우 반전이다. */
     source.x = (float)(column * size);
     source.y = (float)(row * size);
     source.width = (float)(flip ? -size : size);
@@ -331,6 +336,7 @@ void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
         char round[24];
 
         if (g->state != BB_STATE_INTRO) {
+            /* 레벨 타일은 한 아틀라스에서 레벨마다 8픽셀 행을 차지한다. */
             for (y = 0; y < BB_MAP_HEIGHT; ++y)
                 for (x = 0; x < BB_MAP_WIDTH; ++x)
                     if (g->maps[g->level][y][x])
@@ -348,6 +354,7 @@ void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
             bubble = &g->bubbles[i];
             if (!bubble->active) continue;
             frame = bubble->popping ? 5 + ((int)(fmaxf(0, 0.25f - bubble->pop_timer) * 8) % 2) : bubble->age < 0.333f ? (int)(bubble->age * 12) : 3 + (int)(bubble->age * 12) % 2;
+            /* 포획 중에는 일반 버블 대신 적 아틀라스의 포획 프레임을 그린다. */
             if (bubble->captured_enemy < 0 || bubble->popping) sprite(a->bubble, frame, 0, 16, bubble->body.x, bubble->body.y, false);
             if (!bubble->popping && bubble->captured_enemy >= 0 && bubble->captured_enemy < BB_MAX_ENEMIES)
                 sprite(a->enemy, 6 + enemy_frame, enemy_row(g->enemies[bubble->captured_enemy].type), 16, bubble->body.x, bubble->body.y, false);
@@ -372,6 +379,7 @@ void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
             sprite(a->player, column, row, 16, player->body.x, player->body.y, player->facing < 0);
             if (g->state == BB_STATE_INTRO) sprite(a->large_bubble, 3 + (int)(g->state_time * 4) % 2, 0, 32, player->body.x, player->body.y, false);
         }
+        /* 객체를 그린 뒤 화면 상하단을 가려 HUD 영역으로 침범하지 않게 한다. */
         DrawRectangle(0, 0, BB_SCREEN_WIDTH, 24, BLACK);
         DrawRectangle(0, 212, BB_SCREEN_WIDTH, 12, BLACK);
         if (player->active) {

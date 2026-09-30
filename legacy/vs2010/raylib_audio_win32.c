@@ -1,4 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
+/* Include Win32 under temporary names for identifiers also used by raylib. */
 #define Rectangle BBWin32Rectangle
 #define CloseWindow BBWin32CloseWindow
 #include <windows.h>
@@ -28,6 +29,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* Every resource is converted before reaching the mixer, so waveOut always
+ * receives the same signed 16-bit, stereo, 44.1 kHz buffer format. */
 #define BB_AUDIO_SAMPLE_RATE 44100U
 #define BB_AUDIO_CHANNELS 2U
 #define BB_AUDIO_BITS 16U
@@ -64,6 +67,8 @@ typedef struct BBVoice {
     bool active;
 } BBVoice;
 
+/* The critical section protects resources, cursors, voices and volumes from
+ * the worker. Fault fields use interlocked operations across both threads. */
 typedef struct BBAudioEngine {
     CRITICAL_SECTION lock;
     bool lock_initialized;
@@ -111,6 +116,8 @@ static short bb_audio_clamp_sample(int value)
     return (short)value;
 }
 
+/* Handles use 1-based slot IDs. A generation change invalidates copies of a
+ * handle after its slot is unloaded and reused. Call with the lock held. */
 static bool bb_audio_sound_valid_locked(Sound sound, unsigned int *index)
 {
     unsigned int value;
@@ -137,6 +144,8 @@ static bool bb_audio_music_valid_locked(Music music, unsigned int *index)
     return true;
 }
 
+/* Called under the engine lock. Accumulate all active voices before clamping
+ * each output sample, so one loud source does not clip the others early. */
 static void bb_audio_mix(short *output, unsigned int frame_count)
 {
     unsigned int frame;
@@ -190,6 +199,8 @@ static void bb_audio_mix(short *output, unsigned int frame_count)
     }
 }
 
+/* CALLBACK_EVENT only signals completion. Refill every WHDR_DONE header on
+ * this worker thread, rather than decoding or mixing inside a driver callback. */
 static DWORD WINAPI bb_audio_worker(void *parameter)
 {
     HANDLE events[2];
@@ -256,12 +267,16 @@ static bool bb_audio_device_is_gone(MMRESULT result)
     return result == MMSYSERR_INVALHANDLE || result == MMSYSERR_NODRIVER;
 }
 
+/* An invalid handle or removed driver cannot be unprepared through waveOut.
+ * Forget only that unusable device state; its buffers remain static storage. */
 static void bb_audio_abandon_device(void)
 {
     bb_audio.output = NULL;
     memset(bb_audio.header_prepared, 0, sizeof bb_audio.header_prepared);
 }
 
+/* Reset returns queued buffers before unpreparing them. If a bounded wait
+ * cannot finish, retain the remaining device state for another cleanup try. */
 static bool bb_audio_release_device(DWORD timeout_ms)
 {
     int i;
@@ -322,6 +337,8 @@ static bool bb_audio_release_device(DWORD timeout_ms)
     return true;
 }
 
+/* Join the refill worker before closing waveOut or its events: the worker may
+ * still be reading both the headers and the completion event. */
 static bool bb_audio_stop_output(DWORD timeout_ms)
 {
     bool device_released;
@@ -461,6 +478,8 @@ static bool bb_audio_open_output(void)
         return false;
     }
     (void)SetThreadPriority(bb_audio.worker, THREAD_PRIORITY_ABOVE_NORMAL);
+    /* Prime the four prepared buffers with silence; completions then drive
+     * refills without requiring a foreground update every frame. */
     ResetEvent(bb_audio.completion_event);
     for (i = 0; i < BB_AUDIO_BUFFER_COUNT; ++i) {
         result = waveOutWrite(
@@ -485,6 +504,8 @@ static bool bb_audio_open_output(void)
     return true;
 }
 
+/* Recovery runs on foreground API calls after a worker fault. Limit retries
+ * to once per second so a disconnected device cannot stall every frame. */
 static void bb_audio_recover_if_needed(void)
 {
     DWORD now;
@@ -530,6 +551,8 @@ void SetMasterVolume(float volume)
     LeaveCriticalSection(&bb_audio.lock);
 }
 
+/* Read WAV or Ogg input into one bounded allocation. Decoding has its own
+ * PCM limit because a small Ogg file can expand substantially. */
 static unsigned char *bb_audio_read_file(const char *path, size_t *size)
 {
     FILE *file;
@@ -601,6 +624,7 @@ Wave LoadWave(const char *fileName)
     else if (bb_audio_has_extension(fileName, ".ogg")) decoded = bb_audio_decode_ogg(data, size, &pcm);
     free(data);
     if (!decoded) return wave;
+    /* Transfer the decoder allocation to Wave; UnloadWave owns the free. */
     wave.data = pcm.samples;
     wave.frameCount = pcm.frame_count;
     wave.sampleRate = pcm.sample_rate;
@@ -639,6 +663,8 @@ Sound LoadSound(const char *fileName)
         return sound;
     }
 
+    /* The slot takes the normalized PCM allocation on success. On a full
+     * resource table, bb_audio_pcm_free releases it after unlocking. */
     EnterCriticalSection(&bb_audio.lock);
     for (i = 0; i < BB_AUDIO_MAX_SOUNDS; ++i) if (!bb_audio.sounds[i].used) break;
     if (i < BB_AUDIO_MAX_SOUNDS) {
@@ -704,6 +730,8 @@ void PlaySound(Sound sound)
         LeaveCriticalSection(&bb_audio.lock);
         return;
     }
+    /* Replaying an already active sound restarts that voice. Otherwise prefer
+     * a free voice and replace the oldest when the pool is full. */
     for (i = 0; i < BB_AUDIO_MAX_VOICES; ++i) {
         if (bb_audio.voices[i].active &&
             bb_audio.voices[i].sound_index == sound_index &&
@@ -747,6 +775,8 @@ Music LoadMusicStreamFromMemory(const char *fileType, const unsigned char *data,
     BBAudioPcm pcm;
     unsigned int i;
     memset(&music, 0, sizeof music);
+    /* Despite the raylib name, this backend decodes the whole Ogg in memory;
+     * the mixer advances its cursor on the worker, bounded by the PCM limit. */
     if (!IsAudioDeviceReady() || fileType == NULL || data == NULL || dataSize <= 0 ||
         !bb_audio_has_extension(fileType, ".ogg") ||
         !bb_audio_decode_ogg(data, (size_t)dataSize, &pcm)) return music;
@@ -825,6 +855,8 @@ void PlayMusicStream(Music music)
 void UpdateMusicStream(Music music)
 {
     unsigned int music_index;
+    /* Mixing is independent of frame updates; this synchronizes the caller's
+     * looping flag and gives a faulted output device a recovery opportunity. */
     bb_audio_recover_if_needed();
     if (!bb_audio.lock_initialized) return;
     EnterCriticalSection(&bb_audio.lock);

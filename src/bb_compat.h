@@ -83,6 +83,7 @@ static int BB_COMPAT_UNUSED bb_vsnprintf(char *buffer, size_t capacity, const ch
     int result;
     if (capacity == 0) return -1;
     result = _vsnprintf(buffer, capacity, format, arguments);
+    /* 오래된 CRT는 잘릴 때 종단 문자를 보장하지 않는다. */
     buffer[capacity - 1] = '\0';
     return result;
 }

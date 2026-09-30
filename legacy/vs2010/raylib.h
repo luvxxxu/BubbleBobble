@@ -3,6 +3,8 @@
 
 #include "bb_compat.h"
 
+/* Source-compatible subset used by the game, backed by Win32/GDI+ and WinMM.
+ * These structs are local handles rather than raylib's binary ABI. */
 typedef struct Vector2 { float x, y; } Vector2;
 typedef struct Rectangle { float x, y, width, height; } Rectangle;
 typedef struct Color { unsigned char r, g, b, a; } Color;
@@ -12,6 +14,8 @@ typedef Texture Texture2D;
 typedef struct RenderTexture { unsigned int id; Texture texture, depth; } RenderTexture;
 typedef RenderTexture RenderTexture2D;
 typedef struct Font { int baseSize, glyphCount, glyphPadding; Texture2D texture; Rectangle *recs; void *glyphs; } Font;
+/* Wave.data owns decoded PCM; Sound/Music refer to mixer slots. Generation
+ * prevents an unloaded handle from referring to a later occupant of a slot. */
 typedef struct Wave { void *data; unsigned int frameCount, sampleRate, sampleSize, channels; } Wave;
 typedef struct Sound { unsigned int frameCount, id, generation; } Sound;
 typedef struct Music { bool looping; unsigned int id, generation; } Music;

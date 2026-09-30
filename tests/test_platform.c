@@ -19,6 +19,7 @@ int main(int argc, char **argv)
     const char *path = arguments.values[1];
     BbScore scores[BB_SCORE_COUNT] = {0};
     size_t count = 0;
+    /* 상위 10개만 남기고 동점은 나중에 넣은 점수를 앞에 둔다. */
     for (unsigned i = 0; i < 15; ++i)
         bb_scores_insert(scores, &count, (BbScore){i * 100, 1, "AAA"});
     assert(count == BB_SCORE_COUNT);
@@ -49,6 +50,7 @@ int main(int argc, char **argv)
     for (int i = 0; i < 300; ++i) assert(fputc('X', file) != EOF);
     assert(fputs("\n900 3 AAA\n", file) >= 0);
     assert(fclose(file) == 0);
+    /* 지나치게 긴 행을 읽은 뒤에도 다음 정상 행을 이어서 처리한다. */
     assert(load_count(path, read_back) == 1 && read_back[0].score == 900);
     assert(!bb_scores_save(path, read_back, BB_SCORE_COUNT + 1));
     char small[4], joined[32], assets[BB_PATH_CAP];
@@ -59,6 +61,7 @@ int main(int argc, char **argv)
     assert(strstr(assets, "assets"));
     assert(!bb_platform_asset_dir(small, sizeof small));
     assert(bb_platform_remove(path));
+    /* UTF-8 이름의 파일 경로도 저장, 재읽기, 삭제를 거쳐야 한다. */
     char unicode_path[BB_PATH_CAP];
     int n = snprintf(unicode_path, sizeof unicode_path, "%s-\xec\xa0\x90\xec\x88\x98.txt", path);
     assert(n > 0 && (size_t)n < sizeof unicode_path);

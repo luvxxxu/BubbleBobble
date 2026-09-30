@@ -93,6 +93,7 @@ bool bb_platform_arguments(int argc, char **argv, BBArguments *out)
     int size;
 #endif
 
+    /* Windows의 좁은 argv 인코딩에 의존하지 않고 원본 유니코드 명령줄을 UTF-8로 변환한다. */
     out->count = argc;
     out->values = argv;
     out->owned = false;
@@ -119,6 +120,7 @@ bool bb_platform_arguments(int argc, char **argv, BBArguments *out)
 
 bool bb_platform_asset_dir(char *out, size_t capacity)
 {
+    /* 작업 디렉터리와 무관하게 실행 파일 옆의 assets 디렉터리를 찾는다. */
     char executable[BB_PATH_CAP];
     char *separator;
 #if defined(_WIN32)
@@ -163,6 +165,7 @@ static bool make_directory(const char *path)
 
 bool bb_platform_score_path(char *out, size_t capacity)
 {
+    /* 사용자별 저장 위치를 만들고 작업 디렉터리에는 점수를 쓰지 않는다. */
     char parent[BB_PATH_CAP], directory[BB_PATH_CAP];
 #if defined(_WIN32)
     wchar_t wide_parent[BB_PATH_CAP];
@@ -186,6 +189,7 @@ bool bb_platform_score_path(char *out, size_t capacity)
 
 void bb_scores_insert(BbScore scores[BB_SCORE_COUNT], size_t *count, BbScore score)
 {
+    /* 점수 내림차순, 동점이면 도달 라운드 내림차순으로 상위 10개만 남긴다. */
     size_t length = *count < BB_SCORE_COUNT ? *count : BB_SCORE_COUNT;
     size_t position = 0;
     size_t i;
@@ -218,6 +222,7 @@ bool bb_scores_load(const char *path, BbScore scores[BB_SCORE_COUNT], size_t *ou
     BbScore record;
     bool ok;
 
+    /* 유효한 기록만 다시 삽입해 정렬하며, 손상된 줄은 건너뛴다. */
     *out_count = 0;
     file = bb_platform_fopen(path, "rb");
     count = 0;
@@ -275,6 +280,7 @@ bool bb_scores_save(const char *path, const BbScore *scores, size_t count)
     wchar_t wide_temp[BB_PATH_CAP], wide_path[BB_PATH_CAP];
 #endif
 
+    /* 임시 파일을 완전히 닫은 뒤 교체해 대상 파일에 부분 쓰기를 피한다. */
     if (!path[0] || count > BB_SCORE_COUNT) return false;
     n = snprintf(temporary, sizeof temporary, "%s.tmp", path);
     if (n < 0 || (size_t)n >= sizeof temporary) return false;

@@ -64,6 +64,7 @@ static void test_platforms_and_momentum(void)
 {
     BBGame game;
     fixture(&game);
+    /* 바닥에서 점프해 일방 통과 발판의 아랫면을 지나 윗면에 착지한다. */
     for(int x = 2; x <= 10; ++x)
         game.maps[0][22][x] = 2;
     CHECK(fabsf(game.players[0].body.y - 25.025f) < 0.001f);
@@ -121,6 +122,7 @@ static void test_walls_wrap_and_fire(void)
 
 static void test_capture_and_release(void)
 {
+    /* 세 적 유형 모두 제한 시간이 지나면 포획 전 유형을 유지하며 복귀한다. */
     for(int type = 0; type < BB_ENEMY_TYPE_COUNT; ++type)
     {
         BBGame game;
@@ -204,6 +206,7 @@ static void test_lives_and_respawn(void)
     wait_ticks(&game, 190);
     CHECK(game.players[0].state == BB_PLAYER_NORMAL);
     CHECK(game.players[0].invulnerable > 2.8f);
+    /* 부활 직후 적과 겹쳐도 무적 시간이 남아 목숨이 다시 줄지 않는다. */
     game.enemies[0] = (BBEnemy){ .body = game.players[0].body,
         .active = true, .state = BB_ENEMY_WALKING };
     tick(&game, 0.0f, false, false);
@@ -239,6 +242,7 @@ static void test_levels(void)
     CHECK(BB_PICKUP_TYPE_COUNT == 20);
     bb_game_start(&game);
     CHECK(game.state == BB_STATE_INTRO);
+    /* 고정 틱 841회는 7초 경계를 넘어 자동 인트로 종료를 검증한다. */
     wait_ticks(&game, 841);
     CHECK(game.state == BB_STATE_PLAY);
     CHECK(game.players[0].lives == 5);
@@ -383,6 +387,7 @@ static void update_with_dt(BBGame *game, float dt)
 
 static void test_energy_cycle_and_boundaries(void)
 {
+    /* 30/60/120Hz에서 충전/가속 경계와 반복 주기 오차를 확인한다. */
     const int rates[] = {30, 60, 120};
     CHECK(BB_ENERGY_CHARGE_SECONDS == 15.0f);
     CHECK(BB_ENERGY_BOOST_SECONDS == 5.0f);
@@ -419,6 +424,7 @@ static void test_energy_cycle_and_boundaries(void)
         }
     }
 
+    /* 한 틱이 구간 경계를 넘어갈 때 남은 시간을 다음 구간으로 이월한다. */
     BBGame game;
     fixture(&game);
     set_energy_phase(&game.players[0], false, 14.99);
@@ -482,6 +488,7 @@ static void test_energy_horizontal_speed_and_momentum(void)
 
 static void test_energy_lifecycle(void)
 {
+    /* 메뉴/인트로/점수 화면과 사망 중에는 멈추고 클리어 중에는 충전한다. */
     const BBState frozen_states[] = {BB_STATE_MENU, BB_STATE_INTRO, BB_STATE_SCORE};
     BBGame game;
     for(unsigned state_index = 0; state_index < sizeof frozen_states / sizeof frozen_states[0]; ++state_index)
@@ -544,6 +551,7 @@ static void test_finite_input_and_determinism(void)
     bb_game_update(&a, NULL, 1.0f);
     bb_game_check_bump(&a);
     CHECK(a.ticks == previous_tick);
+    /* 동일한 시드와 입력열은 긴 실행에서도 같은 상태를 만들고 NaN 이동 입력을 견딘다. */
     uint32_t random = 67891;
     for(int step = 0; step < 60000; ++step)
     {

@@ -19,6 +19,7 @@ case "$bundle_path" in
     *.app) ;;
     *) fail '출력 경로는 .app으로 끝나야 합니다.' ;;
 esac
+# 기존 경로는 이 스크립트가 만든 번들임을 식별자로 확인한 뒤에만 교체한다.
 if [ -e "$bundle_path" ]; then
     existing_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$bundle_path/Contents/Info.plist" 2>/dev/null || true)
     [ "$existing_id" = local.bubblebobble.c11 ] || fail '이 애플리케이션 번들이 아닌 기존 디렉터리는 교체하지 않습니다.'
@@ -30,6 +31,7 @@ cd "$repo_dir"
 
 bundle_parent=$(dirname -- "$bundle_path")
 mkdir -p "$bundle_parent"
+# 완성 전 결과물이 대상 경로에 노출되지 않도록 같은 부모 디렉터리에 준비한다.
 stage_dir=$(mktemp -d "$bundle_parent/.bubblebobble-package.XXXXXX")
 trap 'rm -rf "$stage_dir"' EXIT HUP INT TERM
 "$cmake_bin" --install build/macos-arm64 --prefix "$stage_dir/install"
@@ -40,6 +42,7 @@ executable="$stage_dir/install/bin/BubbleBobble"
 
 staged_bundle="$stage_dir/BubbleBobble.app"
 mkdir -p "$staged_bundle/Contents/MacOS" "$staged_bundle/Contents/Resources/licenses"
+# 게임은 실행 파일 옆의 assets를 찾으므로 앱 번들 안에서도 이 배치를 유지한다.
 /usr/bin/ditto "$executable" "$staged_bundle/Contents/MacOS/BubbleBobble"
 /usr/bin/ditto "$stage_dir/install/bin/assets" "$staged_bundle/Contents/MacOS/assets"
 cp LICENSE.md "$staged_bundle/Contents/Resources/licenses/UPSTREAM-LICENSE.md"
@@ -78,6 +81,7 @@ if [ -e "$bundle_path" ]; then
     mv "$bundle_path" "$stage_dir/previous.app"
 fi
 if ! mv "$staged_bundle" "$bundle_path"; then
+    # 새 번들 배치가 실패하면 앞서 옮겨 둔 기존 번들을 되돌린다.
     if [ -d "$stage_dir/previous.app" ]; then
         mv "$stage_dir/previous.app" "$bundle_path"
     fi

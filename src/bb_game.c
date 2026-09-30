@@ -15,6 +15,7 @@ static float decrease(float value, float dt) { return maximum(0.0f, value - dt);
 
 static float random_unit(BBGame *game)
 {
+    /* 게임 상태에 보관한 xorshift32 시드를 사용해 같은 입력을 재현 가능하게 한다. */
     uint32_t value = game->rng;
     value ^= value << 13;
     value ^= value >> 17;
@@ -25,6 +26,7 @@ static float random_unit(BBGame *game)
 
 static int tile_at(const BBGame *game, int x, int y)
 {
+    /* 맵 밖은 빈 공간이다. 아래쪽 순환 통로와 맵 위 진입에 벽을 만들지 않는다. */
     if(x < 0 || x >= BB_MAP_WIDTH || y < 0 || y >= BB_MAP_HEIGHT)
         return 0;
     return game->maps[game->level][y][x];
@@ -114,6 +116,7 @@ static unsigned move_body(const BBGame *game, BBBody *body, float hw, float hh,
     }
     if(hit & HIT_Y)
         body->vy = 0.0f;
+    /* 바닥 아래로 완전히 내려간 뒤에만 위쪽으로 순환시킨다. */
     if(wrap && body->y > (float)BB_MAP_HEIGHT + 1.0f)
         body->y -= (float)BB_MAP_HEIGHT + 2.0f;
     return hit;
@@ -158,6 +161,8 @@ static void enter_level(BBGame *game, int level)
     game->state_time = 0.0f;
     game->state = BB_STATE_PLAY;
     game->events |= BB_EVENT_LEVEL;
+    /* 적과 투사체, 보상을 비우고 플레이어를 재배치한다.
+     * 플레이어의 목숨, 점수, 에너지와 보상 순서는 이어진다. */
     memset(game->enemies, 0, sizeof game->enemies);
     memset(game->bubbles, 0, sizeof game->bubbles);
     memset(game->boulders, 0, sizeof game->boulders);
@@ -188,6 +193,7 @@ static void shuffle_pickups(BBGame *game)
     BBPickupType saved;
     for(i = 0; i < BB_PICKUP_TYPE_COUNT; ++i)
         game->pickup_order[i] = (BBPickupType)i;
+    /* 모든 보상 종류가 한 번씩 나오는 순서를 Fisher-Yates 방식으로 섞는다. */
     for(i = BB_PICKUP_TYPE_COUNT - 1; i > 0; --i)
     {
         j = (int)(random_unit(game) * (float)(i + 1));
@@ -205,6 +211,7 @@ void bb_game_init(BBGame *game, const uint8_t *tiles, uint32_t seed)
     memset(game, 0, sizeof *game);
     if(tiles != NULL)
         memcpy(game->maps, tiles, sizeof game->maps);
+    /* xorshift32의 영 시드는 계속 영이므로 고정된 비영 시드로 대체한다. */
     game->rng = seed != 0 ? seed : 0xB0BB1EU;
     game->state = BB_STATE_MENU;
 }
@@ -375,6 +382,7 @@ static void tick_player(BBGame *game, BBPlayer *player, int index, BBInput input
     player->fire_cooldown = decrease(player->fire_cooldown, dt);
     if(player->state == BB_PLAYER_DEAD)
     {
+        /* 사망 대기 중에는 에너지 구간을 진행하지 않고, 부활 시에도 보존한다. */
         player->death_timer = decrease(player->death_timer, dt);
         if(player->death_timer <= 0.0f)
         {
@@ -643,6 +651,7 @@ static void finish_pop(BBGame *game, BBBubble *bubble)
         enemy->body = bubble->body;
         enemy->body.grounded = false;
         enemy->age = 0.0f;
+        /* 자연 소멸은 적을 놓아주고, 플레이어가 터뜨린 경우에는 보상 낙하로 이어진다. */
         if(bubble->releasing)
         {
             enemy->state = BB_ENEMY_FALLING;
@@ -757,6 +766,7 @@ void bb_game_update(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float dt
     int i;
     if(game == NULL)
         return;
+    /* 이벤트는 틱 단위이고, 이전 틱의 미처리 충돌은 새 update가 덮어쓴다. */
     game->events = 0;
     game->bump_pending = false;
     if(!isfinite(dt) || dt <= 0.0f || dt > (1.0f / 30.0f))
@@ -827,12 +837,14 @@ static void check_bubble_bump(BBGame *game)
                     continue;
                 if(circles_overlap(game, &bubble->body, 0.75f, &enemy->body, 0.95f))
                 {
+                    /* 적은 버블이 끝날 때까지 활성 상태로 남지만 다른 충돌은 건너뛴다. */
                     bubble->captured_enemy = e;
                     enemy->state = BB_ENEMY_CAPTURED;
                     break;
                 }
             }
         }
+        /* 발사 직후에는 어느 플레이어도 버블을 곧바로 터뜨리지 못하게 한다. */
         if(bubble->age < 1.0f)
             continue;
         for(p = 0; p < BB_MAX_PLAYERS; ++p)
@@ -909,6 +921,7 @@ void bb_game_check_bump(BBGame *game)
     bool living_player;
     if(game == NULL || !game->bump_pending)
         return;
+    /* 같은 update의 충돌을 중복 적용하면 목숨과 점수가 다시 바뀔 수 있다. */
     game->bump_pending = false;
     check_bubble_bump(game);
     /* 버블 포획을 먼저 처리하면 같은 틱에 적이 플레이어를 맞히지 않는다. */
@@ -936,6 +949,7 @@ void bb_game_check_bump(BBGame *game)
         game->won = false;
         return;
     }
+    /* 클리어 대기 중에도 아이템을 먹을 수 있도록 전환은 충돌 처리 뒤에 한다. */
     if(game->state == BB_STATE_PLAY && bb_game_enemies_left(game) == 0)
     {
         game->state = BB_STATE_CLEAR;

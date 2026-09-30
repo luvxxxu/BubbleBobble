@@ -24,6 +24,7 @@ static void test_layouts_and_jumps(void)
     bb_levels_build(&maps[0][0][0]);
     for (int level = 0; level < BB_LEVEL_COUNT; ++level) {
         count = 0;
+        /* 각 y줄의 발판은 하나의 연속 구간이어야 도달성 계산이 유효하다. */
         for (int y = 0; y < BB_MAP_HEIGHT; ++y) {
             left[y] = right[y] = -1;
             for (int x = 0; x < BB_MAP_WIDTH; ++x) {
@@ -54,6 +55,7 @@ static void test_layouts_and_jumps(void)
             overlap_right = right[y] < lower_right ? right[y] : lower_right;
             assert(overlap_right - overlap_left >= 1);
             jump_x = (float)overlap_left + 1.0f;
+            /* 첫 점프의 출발점은 바닥 순환 구멍을 피한다. */
             if (lower_y == 26 && jump_x > 13.1f && jump_x < 18.9f)
                 jump_x = 19.0f;
             bb_game_init(&game, &maps[0][0][0], 9);

@@ -1,6 +1,7 @@
 if(NOT DEFINED BB_SOURCE_DIR)
     message(FATAL_ERROR "BB_SOURCE_DIR is required")
 endif()
+# 활성 소스와 테스트만 감사한다. 별도 VS2010 호환 계층과 외부 코드는 대상이 아니다.
 file(GLOB_RECURSE sources LIST_DIRECTORIES FALSE
     "${BB_SOURCE_DIR}/src/*" "${BB_SOURCE_DIR}/tests/*")
 foreach(source IN LISTS sources)
