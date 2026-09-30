@@ -6,8 +6,9 @@
 #include "raylib.h"
 
 enum { BB_SCREEN_WIDTH = 256, BB_SCREEN_HEIGHT = 224 };
+typedef enum BBMenu { BB_MENU_PLAY, BB_MENU_LEADERBOARD, BB_MENU_COUNT } BBMenu;
 typedef struct BBAssets {
-    Texture2D player[2], enemy, tiles, bubble, large_bubble, items, logo;
+    Texture2D player, enemy, tiles, bubble, large_bubble, items, logo;
     Font font;
     Sound fire, jump, death;
     Music music;
@@ -16,10 +17,10 @@ typedef struct BBAssets {
 } BBAssets;
 typedef struct BBUI {
     int menu_selection;
-    bool muted, paused, save_failed;
+    bool muted, paused, save_failed, entering_initials;
     BbScore scores[BB_SCORE_COUNT];
     size_t score_count;
-    int score_player, initial_cursor;
+    int initial_cursor;
     char initials[4];
 } BBUI;
 

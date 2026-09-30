@@ -47,43 +47,29 @@ static bool pad_down(int index, int button)
     return IsGamepadAvailable(index) && IsGamepadButtonDown(index, button);
 }
 
-static BBInput player_input(int index, bool single)
+static BBInput player_input(void)
 {
     BBInput input = {0};
     float stick;
-    if (index == 0) {
-        input.move = (float)((int)IsKeyDown(KEY_D) - (int)IsKeyDown(KEY_A));
-        input.jump = key_pressed(KEY_W) || key_pressed(KEY_SPACE) || key_pressed(KEY_X);
-        input.fire = key_pressed(KEY_E) || key_pressed(KEY_Z);
-    }
-    if (index == 1 || single) {
-        input.move += (float)((int)IsKeyDown(KEY_RIGHT) - (int)IsKeyDown(KEY_LEFT));
-        input.jump = input.jump || key_pressed(KEY_UP);
-        input.fire = input.fire || key_pressed(KEY_SLASH) || key_pressed(KEY_RIGHT_CONTROL);
-    }
-    if (IsGamepadAvailable(index)) {
-        stick = GetGamepadAxisMovement(index, GAMEPAD_AXIS_LEFT_X);
+    input.move = (float)((int)IsKeyDown(KEY_D) - (int)IsKeyDown(KEY_A));
+    input.move += (float)((int)IsKeyDown(KEY_RIGHT) - (int)IsKeyDown(KEY_LEFT));
+    input.jump = key_pressed(KEY_W) || key_pressed(KEY_SPACE) || key_pressed(KEY_X) || key_pressed(KEY_UP);
+    input.fire = key_pressed(KEY_E) || key_pressed(KEY_Z) || key_pressed(KEY_SLASH) || key_pressed(KEY_RIGHT_CONTROL);
+    if (IsGamepadAvailable(0)) {
+        stick = GetGamepadAxisMovement(0, GAMEPAD_AXIS_LEFT_X);
         if (fabsf(stick) > 0.2f) input.move += stick;
-        input.move += (float)((int)pad_down(index, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) - (int)pad_down(index, GAMEPAD_BUTTON_LEFT_FACE_LEFT));
-        input.jump = input.jump || pad_pressed(index, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT) || pad_pressed(index, GAMEPAD_BUTTON_LEFT_FACE_UP);
-        input.fire = input.fire || pad_pressed(index, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
+        input.move += (float)((int)pad_down(0, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) - (int)pad_down(0, GAMEPAD_BUTTON_LEFT_FACE_LEFT));
+        input.jump = input.jump || pad_pressed(0, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT) || pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP);
+        input.fire = input.fire || pad_pressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     }
     if (input.move < -1) input.move = -1;
     if (input.move > 1) input.move = 1;
     return input;
 }
 
-static int next_score_player(const BBGame *game, int after)
-{
-    int i;
-    for (i = after + 1; i < BB_MAX_PLAYERS; ++i)
-        if (game->players[i].active && game->players[i].score >= 0) return i;
-    return -1;
-}
-
 static void score_entry_begin(BBUI *ui, const BBGame *game)
 {
-    ui->score_player = next_score_player(game, -1);
+    ui->entering_initials = game->players[0].active && game->players[0].score >= 0;
     ui->initial_cursor = 0;
     memcpy(ui->initials, "AAA", 4);
 }
@@ -93,7 +79,7 @@ static void score_input(BBUI *ui, BBGame *game, bool up, bool down, bool confirm
     char *letter;
     int key;
     BbScore record = {0};
-    if (ui->score_player < 0) {
+    if (!ui->entering_initials) {
         if (confirm) bb_game_menu(game);
         return;
     }
@@ -110,7 +96,7 @@ static void score_input(BBUI *ui, BBGame *game, bool up, bool down, bool confirm
     }
     if (!confirm) return;
     if (++ui->initial_cursor < 3) return;
-    record.score = (unsigned)game->players[ui->score_player].score;
+    record.score = (unsigned)game->players[0].score;
     record.round = game->level + 1;
     memcpy(record.name, ui->initials, sizeof record.name);
     bb_scores_insert(ui->scores, &ui->score_count, record);
@@ -118,7 +104,7 @@ static void score_input(BBUI *ui, BBGame *game, bool up, bool down, bool confirm
         ui->save_failed = true;
         fprintf(stderr, "Could not save leaderboard to %s\n", score_path);
     }
-    ui->score_player = next_score_player(game, ui->score_player);
+    ui->entering_initials = false;
     ui->initial_cursor = 0;
     memcpy(ui->initials, "AAA", 4);
 }
@@ -127,7 +113,7 @@ static void usage(const char *program)
 {
     printf("Usage: %s [--assets DIR] [--mute] [--validate-assets]\n"
            "       [--smoke-test FRAMES] [--screenshot PATH.png] [--score-file PATH]\n"
-           "P1: A/D, W/Space/X jump, E/Z fire. P2: arrows, / fire.\n"
+           "Move: A/D or left/right. Jump: W/Space/X/up. Fire: E/Z/Slash/Right Ctrl.\n"
            "Menu: arrows + Enter; P pause; M mute; Escape menu; F11 fullscreen.\n", program);
 }
 
@@ -169,7 +155,7 @@ static int run_game(int argc, char **argv)
     BBAssets assets;
     RenderTexture2D canvas;
     BBGame game;
-    BBInput pending[BB_MAX_PLAYERS] = {{0}};
+    BBInput pending = {0};
     double accumulator = 0;
     int frames = 0;
     bool screenshot_ok = true;
@@ -207,11 +193,10 @@ static int run_game(int argc, char **argv)
     bb_assets_install_file_loader();
     if (!bb_assets_validate(asset_directory, maps)) return EXIT_FAILURE;
     if (validate_only) {
-        printf("Validated all 3 maps, 8 sprite sheets/images, original font file, 3 WAV sounds and OGG music.\n");
+        printf("Validated %d playable maps, original map reference, single-player sprite sheets/images, font, 3 WAV sounds and OGG music.\n", BB_LEVEL_COUNT);
         return EXIT_SUCCESS;
     }
     ui.muted = muted;
-    ui.score_player = -1;
     if (score_override) {
         if (strlen(score_override) >= sizeof score_path) return EXIT_FAILURE;
         memcpy(score_path, score_override, strlen(score_override) + 1);
@@ -254,7 +239,7 @@ static int run_game(int argc, char **argv)
     SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
     bb_game_init(&game, maps, 0xBB1986u);
     bb_game_set_collision_backend(&game, bb_raylib_collision_backend());
-    if (smoke_frames) { bb_game_start(&game, BB_MODE_COOP); bb_game_skip_intro(&game); }
+    if (smoke_frames) { bb_game_start(&game); bb_game_skip_intro(&game); }
     while (!WindowShouldClose()) {
         poll_key_edges();
         previous_state = game.state;
@@ -266,17 +251,17 @@ static int run_game(int argc, char **argv)
         if (key_pressed(KEY_ESCAPE)) {
             if (game.state == BB_STATE_MENU) break;
             bb_game_menu(&game); ui.paused = false; accumulator = 0;
-            memset(pending, 0, sizeof pending);
+            memset(&pending, 0, sizeof pending);
         } else if (game.state == BB_STATE_MENU) {
-            if (up) ui.menu_selection = (ui.menu_selection + 3) % 4;
-            if (down) ui.menu_selection = (ui.menu_selection + 1) % 4;
+            if (up) ui.menu_selection = (ui.menu_selection + BB_MENU_COUNT - 1) % BB_MENU_COUNT;
+            if (down) ui.menu_selection = (ui.menu_selection + 1) % BB_MENU_COUNT;
             if (confirm) {
-                if (ui.menu_selection == 3) {
-                    game.state = BB_STATE_SCORE; ui.score_player = -1;
+                if (ui.menu_selection == BB_MENU_LEADERBOARD) {
+                    game.state = BB_STATE_SCORE; ui.entering_initials = false;
                     memset(game.players, 0, sizeof game.players);
                     game.won = false;
                 }
-                else bb_game_start(&game, (BBMode)ui.menu_selection);
+                else bb_game_start(&game);
                 accumulator = 0;
             }
         } else if (game.state == BB_STATE_SCORE) {
@@ -292,28 +277,25 @@ static int run_game(int argc, char **argv)
             elapsed = smoke_frames ? 1.0f / 60.0f : GetFrameTime();
             if (elapsed > 0.25f) elapsed = 0.25f;
             accumulator += elapsed;
-            for (i = 0; i < BB_MAX_PLAYERS; ++i) {
-                input = player_input(i, game.mode == BB_MODE_SOLO && i == 0);
-                pending[i].move = input.move;
-                pending[i].jump = pending[i].jump || input.jump;
-                pending[i].fire = pending[i].fire || input.fire;
-            }
+            input = player_input();
+            pending.move = input.move;
+            pending.jump = pending.jump || input.jump;
+            pending.fire = pending.fire || input.fire;
             while (accumulator >= (double)BB_FIXED_DT) {
                 if (smoke_frames) {
-                    for (i = 0; i < BB_MAX_PLAYERS; ++i) {
-                        pending[i].move = (game.ticks / 240u + (uint64_t)i) % 2u ? -1.0f : 1.0f;
-                        pending[i].jump = game.ticks % 100u == 0;
-                        pending[i].fire = game.ticks % 50u == 0;
-                    }
+                    pending.move = (game.ticks / 240u) % 2u ? -1.0f : 1.0f;
+                    pending.jump = game.ticks % 100u == 0;
+                    pending.fire = game.ticks % 50u == 0;
                 }
-                bb_game_update(&game, pending, BB_FIXED_DT);
+                bb_game_update(&game, &pending, BB_FIXED_DT);
                 bb_game_check_bump(&game);
                 bb_audio_events(&assets, game.events);
-                for (i = 0; i < BB_MAX_PLAYERS; ++i) { pending[i].jump = false; pending[i].fire = false; }
+                pending.jump = false;
+                pending.fire = false;
                 accumulator -= BB_FIXED_DT;
                 if (game.state == BB_STATE_SCORE) { accumulator = 0; break; }
             }
-        } else { accumulator = 0; memset(pending, 0, sizeof pending); }
+        } else { accumulator = 0; memset(&pending, 0, sizeof pending); }
         if (game.state == BB_STATE_SCORE && previous_state != BB_STATE_SCORE && previous_state != BB_STATE_MENU)
             score_entry_begin(&ui, &game);
         BeginTextureMode(canvas);

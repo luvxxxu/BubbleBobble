@@ -16,7 +16,7 @@ static int checks;
 
 static void tick(BBGame *game, float move, bool jump, bool fire)
 {
-    const BBInput inputs[2] = { { .move = move, .jump = jump, .fire = fire }, {0} };
+    const BBInput inputs[BB_MAX_PLAYERS] = {{ .move = move, .jump = jump, .fire = fire }};
     bb_game_update(game, inputs, BB_FIXED_DT);
     bb_game_check_bump(game);
 }
@@ -34,7 +34,7 @@ static void fixture(BBGame *game)
         for(int x = 0; x < BB_MAP_WIDTH; ++x)
             maps[level][26][x] = 3;
     bb_game_init(game, &maps[0][0][0], UINT32_C(1234567));
-    bb_game_start(game, BB_MODE_SOLO);
+    bb_game_start(game);
     bb_game_skip_intro(game);
     memset(game->enemies, 0, sizeof game->enemies);
     /* 포획 상태의 감시 적으로 무관한 자동 스테이지 전환을 막는다. */
@@ -82,11 +82,11 @@ static void test_platforms_and_momentum(void)
 
     fixture(&game);
     tick(&game, 1.0f, true, false);
-    CHECK(fabsf(game.players[0].body.vx - 8.0f) < 0.001f);
+    CHECK(fabsf(game.players[0].body.vx - BB_PLAYER_GROUND_SPEED) < 0.001f);
     tick(&game, 0.0f, false, false);
-    CHECK(fabsf(game.players[0].body.vx - 8.0f) < 0.001f);
+    CHECK(fabsf(game.players[0].body.vx - BB_PLAYER_GROUND_SPEED) < 0.001f);
     tick(&game, -1.0f, false, false);
-    CHECK(fabsf(game.players[0].body.vx + 4.0f) < 0.001f);
+    CHECK(fabsf(game.players[0].body.vx + BB_PLAYER_AIR_SPEED) < 0.001f);
 }
 
 static void test_walls_wrap_and_fire(void)
@@ -121,23 +121,30 @@ static void test_walls_wrap_and_fire(void)
 
 static void test_capture_and_release(void)
 {
-    BBGame game;
-    fixture(&game);
-    game.enemies[0] = (BBEnemy){ .body = { .x = 6.8f, .y = 25.05f, .grounded = true },
-        .type = BB_ENEMY_ZENCHAN, .active = true, .controlled = true, .state = BB_ENEMY_WALKING, .facing = 1 };
-    tick(&game, 0.0f, false, true);
-    CHECK(game.bubbles[0].captured_enemy == 0);
-    CHECK(game.enemies[0].state == BB_ENEMY_CAPTURED);
-    CHECK(bb_game_enemies_left(&game) == 2);
-    game.bubbles[0].age = 7.999f;
-    tick(&game, 0.0f, false, false);
-    CHECK(game.bubbles[0].popping);
-    CHECK(game.bubbles[0].releasing);
-    wait_ticks(&game, 32);
-    CHECK(!game.bubbles[0].active);
-    CHECK(game.enemies[0].state != BB_ENEMY_CAPTURED);
-    CHECK(game.enemies[0].state != BB_ENEMY_DEAD);
-    CHECK(game.enemies[0].angry);
+    for(int type = 0; type < BB_ENEMY_TYPE_COUNT; ++type)
+    {
+        BBGame game;
+        fixture(&game);
+        game.enemies[0] = (BBEnemy){ .body = { .x = 6.8f, .y = 25.05f, .grounded = true },
+            .type = (BBEnemyType)type, .active = true,
+            .state = BB_ENEMY_WALKING, .facing = 1 };
+        tick(&game, 0.0f, false, true);
+        CHECK(game.bubbles[0].captured_enemy == 0);
+        CHECK(game.enemies[0].state == BB_ENEMY_CAPTURED);
+        CHECK(bb_game_enemies_left(&game) == 2);
+        game.bubbles[0].age = 7.999f;
+        tick(&game, 0.0f, false, false);
+        CHECK(game.bubbles[0].popping);
+        CHECK(game.bubbles[0].releasing);
+        wait_ticks(&game, 32);
+        CHECK(!game.bubbles[0].active);
+        CHECK(game.enemies[0].state != BB_ENEMY_CAPTURED);
+        CHECK(game.enemies[0].state != BB_ENEMY_DEAD);
+        CHECK(game.enemies[0].active);
+        CHECK(game.enemies[0].type == (BBEnemyType)type);
+        if(type == BB_ENEMY_ZENCHAN)
+            CHECK(game.enemies[0].angry);
+    }
 }
 
 static void test_pop_drop_and_score(void)
@@ -164,122 +171,362 @@ static void test_pop_drop_and_score(void)
     CHECK(game.level == 0);
     CHECK(active_pickups(&game) == 1);
     /* 마지막 적의 아이템은 7초 클리어 타이머 전에 먹을 수 있어야 한다. */
+    int reward = bb_game_pickup_score(game.pickups[0].type);
     game.players[0].body = game.pickups[0].body;
     game.players[0].body.vy = 0.0f;
     tick(&game, 0.0f, false, false);
-    CHECK(game.players[0].score == 100);
+    CHECK(game.players[0].score == reward);
     CHECK(active_pickups(&game) == 0);
     CHECK((game.events & BB_EVENT_PICKUP) != 0);
 
     game.pickups[0] = (BBPickup){ .body = game.players[0].body, .type = BB_PICKUP_FRIES, .active = true };
     tick(&game, 0.0f, false, false);
-    CHECK(game.players[0].score == 300);
+    CHECK(game.players[0].score == reward + bb_game_pickup_score(BB_PICKUP_FRIES));
 }
 
 static void collide_enemy_with_player(BBGame *game, int index)
 {
     game->players[index].invulnerable = 0.0f;
     game->enemies[0] = (BBEnemy){ .body = game->players[index].body,
-        .active = true, .controlled = true, .state = BB_ENEMY_WALKING, .facing = 1 };
+        .active = true, .state = BB_ENEMY_WALKING, .facing = 1 };
     tick(game, 0.0f, false, false);
     game->enemies[0].active = false;
 }
 
-static void test_lives_respawn_and_coop(void)
+static void test_lives_and_respawn(void)
 {
     BBGame game;
     fixture(&game);
     collide_enemy_with_player(&game, 0);
-    CHECK(game.players[0].lives == 2);
+    CHECK(game.players[0].lives == BB_STARTING_LIVES - 1);
     CHECK(game.players[0].state == BB_PLAYER_DEAD);
     CHECK((game.events & BB_EVENT_DEATH) != 0);
     wait_ticks(&game, 190);
     CHECK(game.players[0].state == BB_PLAYER_NORMAL);
     CHECK(game.players[0].invulnerable > 2.8f);
     game.enemies[0] = (BBEnemy){ .body = game.players[0].body,
-        .active = true, .controlled = true, .state = BB_ENEMY_WALKING };
+        .active = true, .state = BB_ENEMY_WALKING };
     tick(&game, 0.0f, false, false);
-    CHECK(game.players[0].lives == 2);
+    CHECK(game.players[0].lives == BB_STARTING_LIVES - 1);
     game.enemies[0].active = false;
-    collide_enemy_with_player(&game, 0);
-    wait_ticks(&game, 190);
-    collide_enemy_with_player(&game, 0);
-    wait_ticks(&game, 190);
+    for(int remaining = BB_STARTING_LIVES - 2; remaining >= 0; --remaining)
+    {
+        collide_enemy_with_player(&game, 0);
+        CHECK(game.players[0].lives == remaining);
+        wait_ticks(&game, 190);
+        if(remaining > 0)
+        {
+            CHECK(game.state == BB_STATE_PLAY);
+            CHECK(game.players[0].state == BB_PLAYER_NORMAL);
+        }
+    }
     CHECK(game.players[0].lives == 0);
     CHECK(game.players[0].state == BB_PLAYER_OUT);
     CHECK(game.state == BB_STATE_SCORE);
     CHECK(!game.won);
 
-    bb_game_start(&game, BB_MODE_COOP);
-    bb_game_skip_intro(&game);
-    game.players[0].state = BB_PLAYER_OUT;
-    tick(&game, 0.0f, false, false);
-    CHECK(game.state == BB_STATE_PLAY);
-    CHECK(game.players[1].active);
-    game.players[1].state = BB_PLAYER_OUT;
-    tick(&game, 0.0f, false, false);
-    CHECK(game.state == BB_STATE_SCORE);
 }
 
-static void test_levels_and_versus(void)
+static void test_levels(void)
 {
     BBGame game;
     bb_game_init(&game, NULL, 99);
     CHECK(game.state == BB_STATE_MENU);
-    bb_game_start(&game, BB_MODE_SOLO);
+    CHECK(BB_MAX_PLAYERS == 1);
+    CHECK(BB_LEVEL_COUNT == 5);
+    CHECK(BB_STARTING_LIVES == 5);
+    CHECK(BB_ENEMY_TYPE_COUNT == 3);
+    CHECK(BB_PICKUP_TYPE_COUNT == 20);
+    bb_game_start(&game);
     CHECK(game.state == BB_STATE_INTRO);
     wait_ticks(&game, 841);
     CHECK(game.state == BB_STATE_PLAY);
-    CHECK(bb_game_enemies_left(&game) == 3);
-    CHECK(game.enemies[1].type == BB_ENEMY_MAITA);
-    CHECK(game.enemies[1].spawn_delay == 1.0f);
-    CHECK(game.enemies[2].spawn_y == 8.0f);
-    game.players[0].invulnerable = 1000.0f;
-    for(int level = 0; level < 3; ++level)
+    CHECK(game.players[0].lives == 5);
+    for(int level = 0; level < BB_LEVEL_COUNT; ++level)
     {
+        bool seen[BB_ENEMY_TYPE_COUNT] = {false};
+        int unique_types = 0;
         CHECK(game.level == level);
+        CHECK(game.state == BB_STATE_PLAY);
+        CHECK(bb_game_enemies_left(&game) == level + 1);
+        for(int i = 0; i < BB_MAX_ENEMIES; ++i)
+        {
+            if(!game.enemies[i].active)
+                continue;
+            CHECK(game.enemies[i].type >= 0 && game.enemies[i].type < BB_ENEMY_TYPE_COUNT);
+            seen[game.enemies[i].type] = true;
+        }
+        for(int type = 0; type < BB_ENEMY_TYPE_COUNT; ++type)
+            unique_types += seen[type] ? 1 : 0;
+        CHECK(unique_types == (level < 2 ? level + 1 : BB_ENEMY_TYPE_COUNT));
+        game.players[0].invulnerable = 1000.0f;
         memset(game.enemies, 0, sizeof game.enemies);
         tick(&game, 0.0f, false, false);
         CHECK(game.state == BB_STATE_CLEAR);
         wait_ticks(&game, 841);
-        if(level == 0)
-        {
-            CHECK(bb_game_enemies_left(&game) == 4);
-            CHECK(game.enemies[1].spawn_y == 4.0f);
-        }
-        if(level == 1)
-        {
-            CHECK(game.enemies[0].spawn_delay == 2.0f);
-            CHECK(game.enemies[0].spawn_y == 10.0f);
-            CHECK(game.enemies[2].body.x == 20.0f);
-        }
     }
     CHECK(game.state == BB_STATE_SCORE);
     CHECK(game.won);
     bb_game_menu(&game);
     CHECK(game.state == BB_STATE_MENU);
+}
 
+static void test_enemy_ai_and_boulders(void)
+{
+    BBGame game;
     fixture(&game);
-    bb_game_start(&game, BB_MODE_VERSUS);
-    bb_game_skip_intro(&game);
-    CHECK(!game.players[1].active);
-    CHECK(bb_game_enemies_left(&game) == 1);
-    CHECK(game.enemies[0].controlled);
-    game.enemies[0].type = BB_ENEMY_ZENCHAN;
-    game.enemies[0].body = (BBBody){ .x = 16.0f, .y = 25.05f, .grounded = true };
-    BBInput inputs[2] = {{0}, {.move = 1.0f, .fire = true}};
-    bb_game_update(&game, inputs, BB_FIXED_DT);
-    bb_game_check_bump(&game);
-    CHECK(game.enemies[0].angry);
-    CHECK(fabsf(game.enemies[0].body.vx - 14.4f) < 0.001f);
+    game.enemies[0] = (BBEnemy){ .body = { .x = 16.0f, .y = 25.05f, .grounded = true },
+        .type = BB_ENEMY_ZENCHAN, .state = BB_ENEMY_WALKING,
+        .active = true, .angry = true, .facing = 1 };
+    tick(&game, 0.0f, false, false);
+    CHECK(fabsf(game.enemies[0].body.vx - 10.8f) < 0.001f);
     game.enemies[0].type = BB_ENEMY_MAITA;
-    game.enemies[0].throw_timer = 4.0f;
-    bb_game_update(&game, inputs, BB_FIXED_DT);
-    bb_game_check_bump(&game);
+    game.enemies[0].throw_timer = 5.0f;
+    tick(&game, 0.0f, false, false);
     CHECK(game.boulders[0].active);
     CHECK(game.boulders[0].body.vx > 13.0f);
+    game.enemies[0].active = false;
     wait_ticks(&game, 365);
     CHECK(!game.boulders[0].active);
+}
+
+static void test_all_enemy_pop_rewards(void)
+{
+    for(int type = 0; type < BB_ENEMY_TYPE_COUNT; ++type)
+    {
+        BBGame game;
+        fixture(&game);
+        game.enemies[0] = (BBEnemy){ .active = true, .type = (BBEnemyType)type,
+            .state = BB_ENEMY_CAPTURED };
+        game.bubbles[0] = (BBBubble){ .body = { .x = 10.0f, .y = 20.0f },
+            .active = true, .age = 2.0f, .captured_enemy = 0 };
+        game.players[0].body = (BBBody){ .x = 10.0f, .y = 21.0f, .vy = -18.0f };
+        game.players[0].falling = false;
+        game.players[0].air_control = true;
+        game.players[0].jump_start_y = 25.0f;
+        tick(&game, 0.0f, false, false);
+        CHECK(game.bubbles[0].popping);
+        CHECK(!game.bubbles[0].releasing);
+        wait_ticks(&game, 32);
+        CHECK(game.enemies[0].state == BB_ENEMY_DEAD);
+        CHECK(game.enemies[0].type == (BBEnemyType)type);
+        game.players[0].body.x = 2.0f;
+        wait_ticks(&game, 500);
+        CHECK(!game.enemies[0].active);
+        CHECK(active_pickups(&game) == 1);
+    }
+}
+
+static void test_all_pickups_and_round_persistence(void)
+{
+    BBGame game;
+    int total_score = 0;
+    fixture(&game);
+    CHECK(bb_game_pickup_score(BB_PICKUP_WATERMELON) == 100);
+    CHECK(bb_game_pickup_score(BB_PICKUP_FRIES) == 200);
+    for(int cycle = 0; cycle < 2; ++cycle)
+    {
+        bool seen[BB_PICKUP_TYPE_COUNT] = {false};
+        for(int reward = 0; reward < BB_PICKUP_TYPE_COUNT; ++reward)
+        {
+            if(cycle == 0 && reward == 10)
+            {
+                /* 라운드가 바뀌어도 보상 순환이 초기화되어 다양성이 줄면 안 된다. */
+                memset(game.enemies, 0, sizeof game.enemies);
+                tick(&game, 0.0f, false, false);
+                CHECK(game.state == BB_STATE_CLEAR);
+                wait_ticks(&game, 841);
+                CHECK(game.level == 1);
+                memset(game.enemies, 0, sizeof game.enemies);
+                game.enemies[BB_MAX_ENEMIES - 1] = (BBEnemy){
+                    .active = true, .state = BB_ENEMY_CAPTURED };
+            }
+            game.players[0].body.x = 2.0f;
+            game.enemies[0] = (BBEnemy){ .body = { .x = 16.0f, .y = 10.0f },
+                .active = true, .type = (BBEnemyType)(reward % BB_ENEMY_TYPE_COUNT),
+                .state = BB_ENEMY_DEAD, .age = 4.0f };
+            tick(&game, 0.0f, false, false);
+            CHECK(!game.enemies[0].active);
+            CHECK(active_pickups(&game) == 1);
+            BBPickupType type = game.pickups[0].type;
+            CHECK(type >= 0 && type < BB_PICKUP_TYPE_COUNT);
+            CHECK(!seen[type]);
+            seen[type] = true;
+            int score = bb_game_pickup_score(type);
+            CHECK(score > 0);
+            game.players[0].body = game.pickups[0].body;
+            game.players[0].body.vy = 0.0f;
+            tick(&game, 0.0f, false, false);
+            total_score += score;
+            CHECK(game.players[0].score == total_score);
+            CHECK(active_pickups(&game) == 0);
+            CHECK((game.events & BB_EVENT_PICKUP) != 0);
+        }
+        for(int type = 0; type < BB_PICKUP_TYPE_COUNT; ++type)
+            CHECK(seen[type]);
+    }
+}
+
+static void set_energy_phase(BBPlayer *player, bool boosting, double elapsed)
+{
+    player->boosting = boosting;
+    player->energy_elapsed = elapsed;
+    player->energy = boosting ? 1.0f - (float)(elapsed / BB_ENERGY_BOOST_SECONDS)
+                              : (float)(elapsed / BB_ENERGY_CHARGE_SECONDS);
+}
+
+static void update_with_dt(BBGame *game, float dt)
+{
+    bb_game_update(game, NULL, dt);
+    bb_game_check_bump(game);
+}
+
+static void test_energy_cycle_and_boundaries(void)
+{
+    const int rates[] = {30, 60, 120};
+    CHECK(BB_ENERGY_CHARGE_SECONDS == 15.0f);
+    CHECK(BB_ENERGY_BOOST_SECONDS == 5.0f);
+    for(unsigned rate_index = 0; rate_index < sizeof rates / sizeof rates[0]; ++rate_index)
+    {
+        BBGame game;
+        int rate = rates[rate_index];
+        float dt = 1.0f / (float)rate;
+        fixture(&game);
+        set_energy_phase(&game.players[0], false, 0.0);
+        for(int cycle = 0; cycle < 3; ++cycle)
+        {
+            for(int tick_index = 0; tick_index < 15 * rate - 1; ++tick_index)
+                update_with_dt(&game, dt);
+            CHECK(!game.players[0].boosting);
+            CHECK(game.players[0].energy > 0.99f && game.players[0].energy < 1.0f);
+            update_with_dt(&game, dt);
+            CHECK(game.players[0].boosting);
+            CHECK(fabsf(game.players[0].energy - 1.0f) < 0.00001f);
+            float previous = game.players[0].energy;
+            for(int tick_index = 0; tick_index < 5 * rate - 1; ++tick_index)
+            {
+                update_with_dt(&game, dt);
+                CHECK(game.players[0].boosting);
+                CHECK(game.players[0].energy < previous);
+                CHECK(game.players[0].energy > 0.0f);
+                previous = game.players[0].energy;
+                if(rate % 2 == 0 && tick_index + 1 == 5 * rate / 2)
+                    CHECK(fabsf(game.players[0].energy - 0.5f) < 0.00001f);
+            }
+            update_with_dt(&game, dt);
+            CHECK(!game.players[0].boosting);
+            CHECK(game.players[0].energy >= 0.0f && game.players[0].energy < 0.00001f);
+        }
+    }
+
+    BBGame game;
+    fixture(&game);
+    set_energy_phase(&game.players[0], false, 14.99);
+    update_with_dt(&game, 0.025f);
+    CHECK(game.players[0].boosting);
+    CHECK(fabsf(game.players[0].energy - 0.997f) < 0.000001f);
+    set_energy_phase(&game.players[0], true, 4.99);
+    update_with_dt(&game, 0.025f);
+    CHECK(!game.players[0].boosting);
+    CHECK(fabsf(game.players[0].energy - 0.001f) < 0.000001f);
+}
+
+static void test_energy_horizontal_speed_and_momentum(void)
+{
+    CHECK(BB_PLAYER_GROUND_SPEED > 0.0f && BB_PLAYER_GROUND_SPEED < 8.0f);
+    CHECK(BB_PLAYER_AIR_SPEED > 0.0f && BB_PLAYER_AIR_SPEED < 4.0f);
+    for(int direction = -1; direction <= 1; direction += 2)
+    {
+        BBGame normal, boosted;
+        fixture(&normal);
+        fixture(&boosted);
+        normal.players[0].body.x = boosted.players[0].body.x = 16.0f;
+        set_energy_phase(&normal.players[0], false, 0.0);
+        set_energy_phase(&boosted.players[0], true, 0.0);
+        tick(&normal, (float)direction, false, false);
+        tick(&boosted, (float)direction, false, false);
+        CHECK(fabsf(normal.players[0].body.vx - direction * BB_PLAYER_GROUND_SPEED) < 0.0001f);
+        CHECK(fabsf(boosted.players[0].body.vx - normal.players[0].body.vx * 2.0f) < 0.0001f);
+        CHECK(normal.players[0].body.vy == boosted.players[0].body.vy);
+        tick(&normal, (float)direction, true, false);
+        tick(&boosted, (float)direction, true, false);
+        CHECK(normal.players[0].body.vy == boosted.players[0].body.vy);
+        CHECK(normal.players[0].body.y == boosted.players[0].body.y);
+        CHECK(fabsf(boosted.players[0].body.vx - normal.players[0].body.vx * 2.0f) < 0.0001f);
+        tick(&normal, (float)-direction, false, false);
+        tick(&boosted, (float)-direction, false, false);
+        CHECK(fabsf(normal.players[0].body.vx + direction * BB_PLAYER_AIR_SPEED) < 0.0001f);
+        CHECK(fabsf(boosted.players[0].body.vx - normal.players[0].body.vx * 2.0f) < 0.0001f);
+        CHECK(normal.players[0].body.vy == boosted.players[0].body.vy);
+
+        /* 점프 관성도 가속 시작과 종료 시 현재 배율을 따라야 한다. */
+        BBGame momentum;
+        fixture(&momentum);
+        momentum.players[0].body = (BBBody){ .x = 16.0f, .y = 10.0f,
+            .vx = direction * BB_PLAYER_GROUND_SPEED, .vy = -5.0f };
+        momentum.players[0].falling = false;
+        momentum.players[0].air_control = false;
+        momentum.players[0].jump_start_y = 20.0f;
+        set_energy_phase(&momentum.players[0], false, 14.999);
+        tick(&momentum, 0.0f, false, false);
+        CHECK(momentum.players[0].boosting);
+        CHECK(fabsf(momentum.players[0].body.vx - direction * BB_PLAYER_GROUND_SPEED * 2.0f) < 0.0001f);
+        CHECK(fabsf(momentum.players[0].body.vy + 4.75f) < 0.0001f);
+        set_energy_phase(&momentum.players[0], true, 4.999);
+        tick(&momentum, 0.0f, false, false);
+        CHECK(!momentum.players[0].boosting);
+        CHECK(fabsf(momentum.players[0].body.vx - direction * BB_PLAYER_GROUND_SPEED) < 0.0001f);
+        CHECK(fabsf(momentum.players[0].body.vy + 4.5f) < 0.0001f);
+    }
+}
+
+static void test_energy_lifecycle(void)
+{
+    const BBState frozen_states[] = {BB_STATE_MENU, BB_STATE_INTRO, BB_STATE_SCORE};
+    BBGame game;
+    for(unsigned state_index = 0; state_index < sizeof frozen_states / sizeof frozen_states[0]; ++state_index)
+    {
+        for(int boosting = 0; boosting <= 1; ++boosting)
+        {
+            fixture(&game);
+            set_energy_phase(&game.players[0], boosting != 0, 1.0);
+            float before = game.players[0].energy;
+            game.state = frozen_states[state_index];
+            game.state_time = 0.0f;
+            wait_ticks(&game, 120);
+            CHECK(game.players[0].energy == before);
+            CHECK(game.players[0].energy_elapsed == 1.0);
+            CHECK(game.players[0].boosting == (boosting != 0));
+        }
+    }
+    for(int state = BB_PLAYER_DEAD; state <= BB_PLAYER_OUT; ++state)
+    {
+        fixture(&game);
+        set_energy_phase(&game.players[0], true, 1.0);
+        float before = game.players[0].energy;
+        game.players[0].state = (BBPlayerState)state;
+        game.players[0].death_timer = 2.0f;
+        wait_ticks(&game, 120);
+        CHECK(game.players[0].energy == before);
+        CHECK(game.players[0].energy_elapsed == 1.0);
+    }
+    fixture(&game);
+    set_energy_phase(&game.players[0], false, 0.0);
+    game.state = BB_STATE_CLEAR;
+    game.state_time = 0.0f;
+    wait_ticks(&game, 120);
+    CHECK(fabsf(game.players[0].energy - 1.0f / 15.0f) < 0.000001f);
+
+    set_energy_phase(&game.players[0], true, 2.0);
+    bb_game_start(&game);
+    CHECK(game.players[0].lives == BB_STARTING_LIVES);
+    CHECK(game.players[0].energy == 0.0f);
+    CHECK(game.players[0].energy_elapsed == 0.0);
+    CHECK(!game.players[0].boosting);
+    wait_ticks(&game, 120);
+    CHECK(game.players[0].energy == 0.0f);
+    bb_game_skip_intro(&game);
+    CHECK(game.players[0].energy == 0.0f);
 }
 
 static void test_finite_input_and_determinism(void)
@@ -301,17 +548,15 @@ static void test_finite_input_and_determinism(void)
     for(int step = 0; step < 60000; ++step)
     {
         random = random * UINT32_C(1664525) + UINT32_C(1013904223);
-        BBInput inputs[2] = {
-            { .move = (float)((int)(random % 3) - 1), .jump = (random & 15) == 0, .fire = (random & 7) == 0 },
-            { .move = (float)((int)((random >> 8) % 3) - 1), .jump = (random & 31) == 0, .fire = (random & 63) == 0 }
+        BBInput inputs[BB_MAX_PLAYERS] = {
+            { .move = (float)((int)(random % 3) - 1), .jump = (random & 15) == 0, .fire = (random & 7) == 0 }
         };
         if(step % 100 == 0)
             inputs[0].move = NAN;
         if(a.state == BB_STATE_SCORE)
         {
-            BBMode mode = (BBMode)((step / 100) % 3);
-            bb_game_start(&a, mode);
-            bb_game_start(&b, mode);
+            bb_game_start(&a);
+            bb_game_start(&b);
             bb_game_skip_intro(&a);
             bb_game_skip_intro(&b);
         }
@@ -328,7 +573,10 @@ static void test_finite_input_and_determinism(void)
             CHECK(isfinite(a.players[p].body.x) && isfinite(a.players[p].body.y));
             CHECK(a.players[p].body.x >= 0.0f && a.players[p].body.x <= 32.0f);
             CHECK(a.players[p].body.y > -20.0f && a.players[p].body.y < 31.0f);
-            CHECK(a.players[p].lives >= 0 && a.players[p].lives <= 3);
+            CHECK(a.players[p].lives >= 0 && a.players[p].lives <= BB_STARTING_LIVES);
+            CHECK(isfinite(a.players[p].energy) && a.players[p].energy >= 0.0f && a.players[p].energy <= 1.0f);
+            CHECK(a.players[p].energy == b.players[p].energy);
+            CHECK(a.players[p].boosting == b.players[p].boosting);
         }
         for(int i = 0; i < BB_MAX_BUBBLES; ++i)
             if(a.bubbles[i].active)
@@ -342,8 +590,14 @@ int main(void)
     test_walls_wrap_and_fire();
     test_capture_and_release();
     test_pop_drop_and_score();
-    test_lives_respawn_and_coop();
-    test_levels_and_versus();
+    test_lives_and_respawn();
+    test_levels();
+    test_enemy_ai_and_boulders();
+    test_all_enemy_pop_rewards();
+    test_all_pickups_and_round_persistence();
+    test_energy_cycle_and_boundaries();
+    test_energy_horizontal_speed_and_momentum();
+    test_energy_lifecycle();
     test_finite_input_and_determinism();
     printf("Core regression tests passed (%d checks, 60000 deterministic stress ticks).\n", checks);
     return EXIT_SUCCESS;
