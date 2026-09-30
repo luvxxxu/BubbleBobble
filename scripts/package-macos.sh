@@ -38,7 +38,7 @@ trap 'rm -rf "$stage_dir"' EXIT HUP INT TERM
 executable="$stage_dir/install/bin/BubbleBobble"
 [ -x "$executable" ] || fail "설치한 실행 파일이 없습니다: $executable"
 /usr/bin/lipo -verify_arch arm64 "$executable" || fail '설치한 실행 파일에 Apple Silicon 코드가 없습니다.'
-[ -f "$stage_dir/install/bin/assets/Levels.png" ] || fail '설치한 게임 에셋이 없습니다.'
+[ -f "$stage_dir/install/bin/assets/BubbleCharacter.png" ] || fail '설치한 게임 에셋이 없습니다.'
 
 staged_bundle="$stage_dir/BubbleBobble.app"
 mkdir -p "$staged_bundle/Contents/MacOS" "$staged_bundle/Contents/Resources/licenses"

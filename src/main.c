@@ -68,55 +68,12 @@ static BBInput player_input(void)
     return input;
 }
 
-static void score_entry_begin(BBUI *ui, const BBGame *game)
-{
-    ui->entering_initials = game->players[0].active && game->players[0].score >= 0;
-    ui->initial_cursor = 0;
-    memcpy(ui->initials, "AAA", 4);
-}
-
-static void score_input(BBUI *ui, BBGame *game, bool up, bool down, bool confirm, const char *score_path, bool smoke)
-{
-    char *letter;
-    int key;
-    BbScore record = {0};
-    if (!ui->entering_initials) {
-        if (confirm) bb_game_menu(game);
-        return;
-    }
-    if (key_pressed(KEY_LEFT) && ui->initial_cursor > 0) --ui->initial_cursor;
-    if (key_pressed(KEY_RIGHT) && ui->initial_cursor < 2) ++ui->initial_cursor;
-    letter = &ui->initials[ui->initial_cursor];
-    if (up) *letter = *letter >= 'Z' ? 'A' : (char)(*letter + 1);
-    if (down) *letter = *letter <= 'A' ? 'Z' : (char)(*letter - 1);
-    key = GetCharPressed();
-    while (key) {
-        if (key >= 'a' && key <= 'z') key -= 'a' - 'A';
-        if (key >= 'A' && key <= 'Z') *letter = (char)key;
-        key = GetCharPressed();
-    }
-    if (!confirm) return;
-    if (++ui->initial_cursor < 3) return;
-    record.score = (unsigned)game->players[0].score;
-    record.round = game->level + 1;
-    memcpy(record.name, ui->initials, sizeof record.name);
-    bb_scores_insert(ui->scores, &ui->score_count, record);
-    /* 자동 실행은 실제 사용자 점수 파일에 기록하지 않는다. */
-    if (!smoke && (!score_path[0] || !bb_scores_save(score_path, ui->scores, ui->score_count))) {
-        ui->save_failed = true;
-        fprintf(stderr, "Could not save leaderboard to %s\n", score_path);
-    }
-    ui->entering_initials = false;
-    ui->initial_cursor = 0;
-    memcpy(ui->initials, "AAA", 4);
-}
-
 static void usage(const char *program)
 {
     printf("Usage: %s [--assets DIR] [--mute] [--validate-assets]\n"
-           "       [--smoke-test FRAMES] [--screenshot PATH.png] [--score-file PATH]\n"
+           "       [--smoke-test FRAMES] [--screenshot PATH.png]\n"
            "Move: A/D or left/right. Jump: W/Space/X/up. Fire: E/Z/Slash/Right Ctrl.\n"
-           "Menu: arrows + Enter; P pause; M mute; Escape menu; F11 fullscreen.\n", program);
+           "Menu: Enter; P pause; M mute; Escape menu; F11 fullscreen.\n", program);
 }
 
 static bool save_screenshot(RenderTexture2D canvas, const char *path)
@@ -146,13 +103,12 @@ static bool save_screenshot(RenderTexture2D canvas, const char *path)
 
 static int run_game(int argc, char **argv)
 {
-    const char *asset_override = NULL, *screenshot = NULL, *score_override = NULL;
+    const char *asset_override = NULL, *screenshot = NULL;
     int smoke_frames = 0;
     bool validate_only = false, muted = false;
     int i;
     char asset_directory[BB_PATH_CAP];
-    char score_path[BB_PATH_CAP] = {0};
-    uint8_t maps[BB_LEVEL_COUNT * BB_MAP_WIDTH * BB_MAP_HEIGHT];
+    uint8_t map[BB_MAP_WIDTH * BB_MAP_HEIGHT];
     BBUI ui = {0};
     bool audio_ready;
     BBAssets assets;
@@ -162,10 +118,7 @@ static int run_game(int argc, char **argv)
     double accumulator = 0;
     int frames = 0;
     bool screenshot_ok = true;
-    BBState previous_state;
     bool confirm;
-    bool up;
-    bool down;
     bool simulate;
     float elapsed;
     BBInput input;
@@ -177,7 +130,6 @@ static int run_game(int argc, char **argv)
     bool smoke_ok;
     for (i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--assets") == 0 && i + 1 < argc) asset_override = argv[++i];
-        else if (strcmp(argv[i], "--score-file") == 0 && i + 1 < argc) score_override = argv[++i];
         else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) screenshot = argv[++i];
         else if (strcmp(argv[i], "--mute") == 0) muted = true;
         else if (strcmp(argv[i], "--validate-assets") == 0) validate_only = true;
@@ -195,27 +147,12 @@ static int run_game(int argc, char **argv)
     SetTraceLogLevel(LOG_WARNING);
     bb_assets_install_file_loader();
     /* 이미지와 사운드는 장치 없이 디코딩해 검증하므로 창 생성 전에 실패를 알릴 수 있다. */
-    if (!bb_assets_validate(asset_directory, maps)) return EXIT_FAILURE;
+    if (!bb_assets_validate(asset_directory, map)) return EXIT_FAILURE;
     if (validate_only) {
-        printf("Validated %d playable maps, original map reference, single-player sprite sheets/images, font, 3 WAV sounds and OGG music.\n", BB_LEVEL_COUNT);
+        puts("Validated level 1 map, active sprite sheets/images, font, 2 WAV sounds and OGG music.");
         return EXIT_SUCCESS;
     }
     ui.muted = muted;
-    if (score_override) {
-        if (strlen(score_override) >= sizeof score_path) return EXIT_FAILURE;
-        memcpy(score_path, score_override, strlen(score_override) + 1);
-    } else if (!smoke_frames && !bb_platform_score_path(score_path, sizeof score_path)) {
-        fprintf(stderr, "User score directory unavailable; scores remain in memory.\n");
-        ui.save_failed = true;
-    }
-    /* 읽기 실패 후에는 빈 경로로 만들어 이후의 영구 저장도 막는다. */
-    if (score_path[0]) {
-        if (!bb_scores_load(score_path, ui.scores, &ui.score_count)) {
-            ui.save_failed = true;
-            fprintf(stderr, "Cannot read scores: %s; persistent writes disabled.\n", score_path);
-            score_path[0] = '\0';
-        }
-    }
     SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
     InitWindow(BB_SCREEN_WIDTH * 3, BB_SCREEN_HEIGHT * 3, "Bubble Bobble - C11");
     if (!IsWindowReady()) { fprintf(stderr, "Cannot create graphics window.\n"); return EXIT_FAILURE; }
@@ -242,15 +179,12 @@ static int run_game(int argc, char **argv)
         return EXIT_FAILURE;
     }
     SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
-    bb_game_init(&game, maps, 0xBB1986u);
+    bb_game_init(&game, map, 0xBB1986u);
     bb_game_set_collision_backend(&game, bb_raylib_collision_backend());
     if (smoke_frames) { bb_game_start(&game); bb_game_skip_intro(&game); }
     while (!WindowShouldClose()) {
         poll_key_edges();
-        previous_state = game.state;
         confirm = key_pressed(KEY_ENTER) || pad_pressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
-        up = key_pressed(KEY_UP) || key_pressed(KEY_W) || pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP);
-        down = key_pressed(KEY_DOWN) || key_pressed(KEY_S) || pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN);
         if (key_pressed(KEY_F11)) ToggleFullscreen();
         if (key_pressed(KEY_M)) { ui.muted = !ui.muted; if (audio_ready) SetMasterVolume(ui.muted ? 0.0f : 1.0f); }
         if (key_pressed(KEY_ESCAPE)) {
@@ -258,26 +192,17 @@ static int run_game(int argc, char **argv)
             bb_game_menu(&game); ui.paused = false; accumulator = 0;
             memset(&pending, 0, sizeof pending);
         } else if (game.state == BB_STATE_MENU) {
-            if (up) ui.menu_selection = (ui.menu_selection + BB_MENU_COUNT - 1) % BB_MENU_COUNT;
-            if (down) ui.menu_selection = (ui.menu_selection + 1) % BB_MENU_COUNT;
             if (confirm) {
-                if (ui.menu_selection == BB_MENU_LEADERBOARD) {
-                    game.state = BB_STATE_SCORE; ui.entering_initials = false;
-                    memset(game.players, 0, sizeof game.players);
-                    game.won = false;
-                }
-                else bb_game_start(&game);
+                bb_game_start(&game);
                 accumulator = 0;
             }
-        } else if (game.state == BB_STATE_SCORE) {
-            score_input(&ui, &game, up, down, confirm, score_path, smoke_frames > 0);
         } else {
             if (game.state == BB_STATE_INTRO && confirm) bb_game_skip_intro(&game);
             if (key_pressed(KEY_P) || pad_pressed(0, GAMEPAD_BUTTON_MIDDLE_RIGHT)) ui.paused = !ui.paused;
         }
         if (assets.audio) UpdateMusicStream(assets.music);
         simulate = !ui.paused && (IsWindowFocused() || smoke_frames > 0) &&
-                   game.state != BB_STATE_MENU && game.state != BB_STATE_SCORE;
+                   game.state != BB_STATE_MENU;
         if (simulate) {
             /* 가변 렌더 프레임을 120Hz 고정 시뮬레이션 단계로 누적한다. */
             elapsed = smoke_frames ? 1.0f / 60.0f : GetFrameTime();
@@ -295,17 +220,14 @@ static int run_game(int argc, char **argv)
                     pending.fire = game.ticks % 50u == 0;
                 }
                 bb_game_update(&game, &pending, BB_FIXED_DT);
-                /* 같은 틱의 이동 결과에 대해 충돌과 상태 전환을 한 번 처리한다. */
+                /* 같은 틱의 이동 결과에 대해 버블 충돌을 한 번 처리한다. */
                 bb_game_check_bump(&game);
                 bb_audio_events(&assets, game.events);
                 pending.jump = false;
                 pending.fire = false;
                 accumulator -= BB_FIXED_DT;
-                if (game.state == BB_STATE_SCORE) { accumulator = 0; break; }
             }
         } else { accumulator = 0; memset(&pending, 0, sizeof pending); }
-        if (game.state == BB_STATE_SCORE && previous_state != BB_STATE_SCORE && previous_state != BB_STATE_MENU)
-            score_entry_begin(&ui, &game);
         BeginTextureMode(canvas);
         bb_draw_game(&assets, &game, &ui);
         EndTextureMode();
@@ -331,8 +253,8 @@ static int run_game(int argc, char **argv)
         if (!smoke_frames && screenshot && frames == 1) screenshot_ok = save_screenshot(canvas, screenshot);
     }
     smoke_ok = !smoke_frames || frames >= smoke_frames;
-    if (smoke_frames) printf("Smoke %s: frames=%d ticks=" BB_UINT64_PRINTF " level=%d enemies=%d state=%d\n", smoke_ok ? "completed" : "interrupted", frames,
-                             BB_UINT64_CAST(game.ticks), game.level + 1, bb_game_enemies_left(&game), (int)game.state);
+    if (smoke_frames) printf("Smoke %s: frames=%d ticks=" BB_UINT64_PRINTF " level=1 state=%d\n", smoke_ok ? "completed" : "interrupted", frames,
+                             BB_UINT64_CAST(game.ticks), (int)game.state);
     UnloadRenderTexture(canvas);
     bb_assets_unload(&assets);
     if (audio_ready) CloseAudioDevice();

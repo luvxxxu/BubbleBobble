@@ -100,7 +100,7 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME gameplay COMMAND bb_game_tests)
     add_test(NAME level_layouts COMMAND bb_level_tests)
-    add_test(NAME platform COMMAND bb_platform_tests "${CMAKE_CURRENT_BINARY_DIR}/platform-test-scores.txt")
+    add_test(NAME platform COMMAND bb_platform_tests "${CMAKE_CURRENT_BINARY_DIR}/platform-test-file.txt")
     add_test(NAME legacy_audio_decode COMMAND bb_audio_decode_tests)
     add_test(NAME pure_c_sources COMMAND "${CMAKE_COMMAND}"
         "-DBB_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"

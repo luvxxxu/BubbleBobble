@@ -16,7 +16,7 @@ CMAKE_BIN=/Applications/CMake.app/Contents/bin/cmake \
   ./scripts/package-macos.sh /path/to/BubbleBobble.app
 ```
 
-`.app` 전체를 함께 옮길 수 있습니다. 에셋은 실행 파일 상대 경로인 `Contents/MacOS/assets`에 있으므로 Finder에서 실행해도 현재 작업 디렉터리에 의존하지 않습니다. 업스트림과 raylib 라이선스 파일은 `Contents/Resources/licenses`에 포함됩니다. 저장 데이터는 사용자의 Application Support 디렉터리에 남습니다.
+`.app` 전체를 함께 옮길 수 있습니다. 에셋은 실행 파일 상대 경로인 `Contents/MacOS/assets`에 있으므로 Finder에서 실행해도 현재 작업 디렉터리에 의존하지 않습니다. 업스트림과 raylib 라이선스 파일은 `Contents/Resources/licenses`에 포함됩니다. 이 단일 레벨 테스트 브랜치는 점수나 다른 게임 진행 데이터를 저장하지 않습니다.
 
 이 결과물은 Apple Silicon의 macOS 11 이상을 대상으로 하는 로컬 개발자 번들입니다. 스크립트는 Developer ID 배포 서명을 적용하거나 번들을 공증하지 않으며 Gatekeeper 승인을 주장하지 않습니다. 기존 출력은 식별자가 `local.bubblebobble.c11`인 번들과 일치할 때만 교체합니다.
 

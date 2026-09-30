@@ -4,11 +4,38 @@
 #include <stdio.h>
 #include <string.h>
 
-static size_t load_count(const char *path, BbScore scores[BB_SCORE_COUNT])
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
+static void remove_test_file(const char *path)
 {
-    size_t count = 0;
-    assert(bb_scores_load(path, scores, &count));
-    return count;
+#if defined(_WIN32)
+    wchar_t wide[BB_PATH_CAP];
+    assert(MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1,
+                               wide, BB_PATH_CAP) > 0);
+    assert(_wremove(wide) == 0);
+#else
+    assert(remove(path) == 0);
+#endif
+}
+
+static void check_file_round_trip(const char *path)
+{
+    FILE *file = bb_platform_fopen(path, "wb");
+    assert(file != NULL);
+    assert(fputs("bubble\n", file) >= 0);
+    assert(fclose(file) == 0);
+
+    file = bb_platform_fopen(path, "rb");
+    assert(file != NULL);
+    char contents[16] = {0};
+    assert(fgets(contents, sizeof contents, file) != NULL);
+    assert(strcmp(contents, "bubble\n") == 0);
+    assert(fgetc(file) == EOF);
+    assert(fclose(file) == 0);
+    remove_test_file(path);
 }
 
 int main(int argc, char **argv)
@@ -17,62 +44,25 @@ int main(int argc, char **argv)
     assert(bb_platform_arguments(argc, argv, &arguments));
     assert(arguments.count == 2);
     const char *path = arguments.values[1];
-    BbScore scores[BB_SCORE_COUNT] = {0};
-    size_t count = 0;
-    /* 상위 10개만 남기고 동점은 나중에 넣은 점수를 앞에 둔다. */
-    for (unsigned i = 0; i < 15; ++i)
-        bb_scores_insert(scores, &count, (BbScore){i * 100, 1, "AAA"});
-    assert(count == BB_SCORE_COUNT);
-    assert(scores[0].score == 1400 && scores[9].score == 500);
-    bb_scores_insert(scores, &count, (BbScore){1400, 3, "BBB"});
-    assert(scores[0].round == 3 && strcmp(scores[0].name, "BBB") == 0);
-    assert(bb_scores_save(path, scores, count));
-    BbScore read_back[BB_SCORE_COUNT] = {0};
-    assert(load_count(path, read_back) == count);
-    for (size_t i = 0; i < count; ++i) {
-        assert(read_back[i].score == scores[i].score);
-        assert(read_back[i].round == scores[i].round);
-        assert(strcmp(read_back[i].name, scores[i].name) == 0);
-    }
-    /* 음수, 오버플로, 잘린 행, 잘못된 행은 거부하되 같은 파일 뒤쪽의
-       정상 항목은 잃지 않아야 한다. */
-    FILE *file = bb_platform_fopen(path, "wb");
-    assert(file);
-    assert(fputs("-1 1 BAD\n999999999999999999999999 1 BAD\n100 999 BAD\n"
-                 "12x 1 BAD\n12 1 A\n12 1 LONG\n12 1 aAA\n"
-                 "200 2 OKA\n100 1 OKB\n200 3 OKC\n", file) >= 0);
-    assert(fclose(file) == 0);
-    assert(load_count(path, read_back) == 3);
-    assert(read_back[0].score == 200 && read_back[0].round == 3);
-    assert(strcmp(read_back[2].name, "OKB") == 0);
-    file = bb_platform_fopen(path, "wb");
-    assert(file);
-    for (int i = 0; i < 300; ++i) assert(fputc('X', file) != EOF);
-    assert(fputs("\n900 3 AAA\n", file) >= 0);
-    assert(fclose(file) == 0);
-    /* 지나치게 긴 행을 읽은 뒤에도 다음 정상 행을 이어서 처리한다. */
-    assert(load_count(path, read_back) == 1 && read_back[0].score == 900);
-    assert(!bb_scores_save(path, read_back, BB_SCORE_COUNT + 1));
+
     char small[4], joined[32], assets[BB_PATH_CAP];
     assert(!bb_path_join(small, sizeof small, "too", "long"));
     assert(bb_path_join(joined, sizeof joined, "base", "asset.png"));
     assert(strcmp(joined, "base/asset.png") == 0);
     assert(bb_platform_asset_dir(assets, sizeof assets));
-    assert(strstr(assets, "assets"));
+    assert(strstr(assets, "assets") != NULL);
     assert(!bb_platform_asset_dir(small, sizeof small));
-    assert(bb_platform_remove(path));
-    /* UTF-8 이름의 파일 경로도 저장, 재읽기, 삭제를 거쳐야 한다. */
+
+    check_file_round_trip(path);
+    /* Windows의 파일 열기 래퍼도 UTF-8 이름을 처리해야 한다. */
     char unicode_path[BB_PATH_CAP];
-    int n = snprintf(unicode_path, sizeof unicode_path, "%s-\xec\xa0\x90\xec\x88\x98.txt", path);
+    int n = snprintf(unicode_path, sizeof unicode_path,
+                     "%s-\xed\x95\x9c\xea\xb8\x80.txt", path);
     assert(n > 0 && (size_t)n < sizeof unicode_path);
-    assert(bb_scores_save(unicode_path, read_back, 1));
-    assert(load_count(unicode_path, scores) == 1 && scores[0].score == 900);
-    assert(bb_platform_remove(unicode_path));
-    assert(load_count(unicode_path, scores) == 0);
-    size_t failed_count = 99;
-    assert(!bb_scores_load(".", scores, &failed_count) && failed_count == 0);
-    assert(!bb_scores_save("", read_back, 1));
+    check_file_round_trip(unicode_path);
+
     bb_platform_free_arguments(&arguments);
-    puts("Platform tests passed: score sorting, bounds, malformed input, atomic save, paths.");
+    assert(arguments.count == 0 && arguments.values == NULL);
+    puts("Platform tests passed: asset path, bounded join, UTF-8 file I/O, arguments.");
     return 0;
 }
