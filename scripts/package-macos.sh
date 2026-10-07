@@ -9,6 +9,7 @@ fail() { printf '%s\n' "package-macos: $*" >&2; exit 1; }
 repo_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cmake_bin=${CMAKE_BIN:-cmake}
 command -v "$cmake_bin" >/dev/null 2>&1 || fail 'CMake를 찾을 수 없습니다. CMake 3.24 이상을 설치하거나 CMAKE_BIN에 실행 파일을 설정하세요.'
+ctest_bin="$(dirname -- "$(command -v "$cmake_bin")")/ctest"
 
 bundle_path=${1:-"$repo_dir/build/package/macos-arm64/BubbleBobble.app"}
 case "$bundle_path" in
@@ -28,6 +29,7 @@ fi
 cd "$repo_dir"
 "$cmake_bin" --preset macos-arm64
 "$cmake_bin" --build --preset macos-arm64
+"$ctest_bin" --preset macos-arm64
 
 bundle_parent=$(dirname -- "$bundle_path")
 mkdir -p "$bundle_parent"
@@ -38,13 +40,14 @@ trap 'rm -rf "$stage_dir"' EXIT HUP INT TERM
 executable="$stage_dir/install/bin/BubbleBobble"
 [ -x "$executable" ] || fail "설치한 실행 파일이 없습니다: $executable"
 /usr/bin/lipo -verify_arch arm64 "$executable" || fail '설치한 실행 파일에 Apple Silicon 코드가 없습니다.'
-[ -f "$stage_dir/install/bin/assets/Levels.png" ] || fail '설치한 게임 에셋이 없습니다.'
+[ -f "$stage_dir/install/bin/assets/BubbleCharacter.png" ] || fail '설치한 게임 에셋이 없습니다.'
 
 staged_bundle="$stage_dir/BubbleBobble.app"
 mkdir -p "$staged_bundle/Contents/MacOS" "$staged_bundle/Contents/Resources/licenses"
 # 게임은 실행 파일 옆의 assets를 찾으므로 앱 번들 안에서도 이 배치를 유지한다.
 /usr/bin/ditto "$executable" "$staged_bundle/Contents/MacOS/BubbleBobble"
 /usr/bin/ditto "$stage_dir/install/bin/assets" "$staged_bundle/Contents/MacOS/assets"
+"$staged_bundle/Contents/MacOS/BubbleBobble" --validate-assets
 cp LICENSE.md "$staged_bundle/Contents/Resources/licenses/UPSTREAM-LICENSE.md"
 raylib_license="$repo_dir/build/macos-arm64/_deps/raylib-src/LICENSE"
 if [ -f "$raylib_license" ]; then

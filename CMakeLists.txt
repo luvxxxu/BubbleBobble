@@ -24,11 +24,7 @@ function(bb_configure_c_target target)
     # 자체 C 타깃에만 엄격한 경고를 적용해 외부 raylib의 빌드 옵션을 건드리지 않는다.
     set_target_properties(${target} PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED YES C_EXTENSIONS NO)
     if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /utf-8)
-        # /std:c11은 VS2019 16.8 이후에만 있다. VS2010에서는 인식하지 못한다.
-        if(MSVC_VERSION GREATER 1600)
-            target_compile_options(${target} PRIVATE /std:c11)
-        endif()
+        target_compile_options(${target} PRIVATE /W4 /utf-8 /std:c11)
         target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
         if(BB_WARNINGS_AS_ERRORS)
             target_compile_options(${target} PRIVATE /WX)
@@ -70,20 +66,6 @@ if(BUILD_TESTING)
     add_executable(bb_platform_tests tests/test_platform.c src/bb_platform.c)
     target_include_directories(bb_platform_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     bb_configure_c_target(bb_platform_tests)
-    # 디코더 테스트는 VS2010용 구현을 같은 소스로 검사한다.
-    add_executable(bb_audio_decode_tests
-        tests/test_audio_decode.c
-        legacy/vs2010/bb_audio_decode.c
-        legacy/vs2010/stb_vorbis_impl.c)
-    target_include_directories(bb_audio_decode_tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/legacy/vs2010")
-    target_compile_definitions(bb_audio_decode_tests PRIVATE
-        "BB_TEST_ASSET_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/Assets\"")
-    bb_configure_c_target(bb_audio_decode_tests)
-    if(NOT MSVC)
-        target_link_libraries(bb_audio_decode_tests PRIVATE m)
-    endif()
     if(WIN32)
         target_link_libraries(bb_platform_tests PRIVATE shell32)
     endif()
@@ -91,7 +73,7 @@ if(BUILD_TESTING)
         target_compile_definitions(bb_platform_tests PRIVATE _POSIX_C_SOURCE=200809L)
     endif()
     # 테스트는 Release 구성에서도 assertion을 활성화한 채 유지해야 한다.
-    foreach(test_target bb_game_tests bb_level_tests bb_platform_tests bb_audio_decode_tests)
+    foreach(test_target bb_game_tests bb_level_tests bb_platform_tests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE /UNDEBUG)
         else()
@@ -100,8 +82,7 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME gameplay COMMAND bb_game_tests)
     add_test(NAME level_layouts COMMAND bb_level_tests)
-    add_test(NAME platform COMMAND bb_platform_tests "${CMAKE_CURRENT_BINARY_DIR}/platform-test-scores.txt")
-    add_test(NAME legacy_audio_decode COMMAND bb_audio_decode_tests)
+    add_test(NAME platform COMMAND bb_platform_tests "${CMAKE_CURRENT_BINARY_DIR}/platform-test-file.txt")
     add_test(NAME pure_c_sources COMMAND "${CMAKE_COMMAND}"
         "-DBB_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/AuditPureC.cmake")
@@ -130,7 +111,7 @@ if(BB_BUILD_GAME)
     FetchContent_MakeAvailable(raylib)
     set_property(DIRECTORY "${raylib_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
-    add_executable(BubbleBobble src/main.c src/bb_render.c src/bb_platform.c src/bb_collision_raylib.c src/bb_raylib_types.c)
+    add_executable(BubbleBobble src/main.c src/bb_render.c src/bb_platform.c src/bb_raylib_types.c)
     target_link_libraries(BubbleBobble PRIVATE bb_core raylib)
     bb_configure_c_target(BubbleBobble)
     if(UNIX AND NOT APPLE)
@@ -148,6 +129,10 @@ if(BB_BUILD_GAME)
             "${CMAKE_CURRENT_SOURCE_DIR}/Assets" "$<TARGET_FILE_DIR:BubbleBobble>/assets"
         COMMENT "Copying original game assets" VERBATIM)
     add_dependencies(BubbleBobble bb_assets)
+    if(BUILD_TESTING)
+        # 실제 raylib 경로로 이미지와 오디오를 장치 없이 디코딩한다.
+        add_test(NAME desktop_assets COMMAND BubbleBobble --validate-assets)
+    endif()
     install(TARGETS BubbleBobble RUNTIME DESTINATION bin)
     install(DIRECTORY Assets/ DESTINATION bin/assets)
 endif()

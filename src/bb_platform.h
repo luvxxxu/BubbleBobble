@@ -1,12 +1,13 @@
 #ifndef BB_PLATFORM_H
 #define BB_PLATFORM_H
 
-#include "bb_compat.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 
 #define BB_PATH_CAP 4096
 #define BB_SCORE_COUNT 10
+#define BB_SCORE_MAX_ROUND 5
 typedef struct { unsigned score; int round; char name[4]; } BbScore;
 /* Windows에서는 UTF-8로 변환한 values를 소유하고, 다른 플랫폼에서는 argv를 빌린다. */
 typedef struct { int count; char **values; bool owned; } BBArguments;
@@ -20,10 +21,13 @@ bool bb_platform_remove(const char *path);
 bool bb_platform_arguments(int argc, char **argv, BBArguments *out);
 /* owned일 때만 values를 해제하며, 어느 경우든 구조체를 초기화한다. */
 void bb_platform_free_arguments(BBArguments *arguments);
-/* 없는 파일은 빈 순위표로 처리하고, 읽기 실패는 false를 반환한다. */
+/* 이름은 대문자/숫자/점 3자, 라운드는 1..5다. 없는 파일은 빈 순위표다.
+ * 손상된 행은 건너뛰고, 읽기 실패 또는 과도한 크기는 false와 count=0이다. */
 bool bb_scores_load(const char *path, BbScore scores[BB_SCORE_COUNT], size_t *count);
+/* 점수 내림차순, 동점이면 라운드 내림차순. 완전 동점은 기존 기록이 먼저다.
+ * 잘못된 기록은 무시하며 상위 10개만 보관한다. */
 void bb_scores_insert(BbScore scores[BB_SCORE_COUNT], size_t *count, BbScore score);
-/* 임시 파일 작성 후 대상 경로를 교체한다. */
+/* 임시 파일을 완전히 쓴 뒤 교체한다. 실패하면 기존 파일을 유지한다. */
 bool bb_scores_save(const char *path, const BbScore *scores, size_t count);
 
 #endif

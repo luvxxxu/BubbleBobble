@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -19,16 +20,6 @@
 #else
 #include <sys/stat.h>
 #include <unistd.h>
-#endif
-
-#if !defined(_WIN32)
-static bool copy_path(char *out, size_t capacity, const char *value)
-{
-    size_t length = strlen(value);
-    if (length >= capacity) return false;
-    memcpy(out, value, length + 1);
-    return true;
-}
 #endif
 
 bool bb_path_join(char *out, size_t capacity, const char *dir, const char *name)
@@ -53,9 +44,10 @@ static bool from_wide(const wchar_t *path, char *out, size_t capacity)
 
 FILE *bb_platform_fopen(const char *path, const char *mode)
 {
+    if (!path || !path[0] || !mode || !mode[0]) { errno = EINVAL; return NULL; }
 #if defined(_WIN32)
     wchar_t wide_path[BB_PATH_CAP], wide_mode[BB_PATH_CAP];
-    if (!to_wide(path, wide_path) || !to_wide(mode, wide_mode)) return NULL;
+    if (!to_wide(path, wide_path) || !to_wide(mode, wide_mode)) { errno = EINVAL; return NULL; }
     return _wfopen(wide_path, wide_mode);
 #else
     return fopen(path, mode);
@@ -64,9 +56,12 @@ FILE *bb_platform_fopen(const char *path, const char *mode)
 
 bool bb_platform_remove(const char *path)
 {
+    if (!path || !path[0]) return false;
 #if defined(_WIN32)
-    wchar_t wide_path[BB_PATH_CAP];
-    return to_wide(path, wide_path) && _wremove(wide_path) == 0;
+    {
+        wchar_t wide_path[BB_PATH_CAP];
+        return to_wide(path, wide_path) && _wremove(wide_path) == 0;
+    }
 #else
     return remove(path) == 0;
 #endif
@@ -156,28 +151,41 @@ static bool make_directory(const char *path)
 {
 #if defined(_WIN32)
     wchar_t wide_path[BB_PATH_CAP];
+    DWORD attributes;
     if (!to_wide(path, wide_path)) return false;
-    return _wmkdir(wide_path) == 0 || errno == EEXIST;
+    if (_wmkdir(wide_path) == 0) return true;
+    if (errno != EEXIST) return false;
+    attributes = GetFileAttributesW(wide_path);
+    return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 #else
-    return mkdir(path, 0700) == 0 || errno == EEXIST;
+    struct stat info;
+    if (mkdir(path, 0700) == 0) return true;
+    return errno == EEXIST && stat(path, &info) == 0 && S_ISDIR(info.st_mode);
 #endif
 }
 
 bool bb_platform_score_path(char *out, size_t capacity)
 {
-    /* 사용자별 저장 위치를 만들고 작업 디렉터리에는 점수를 쓰지 않는다. */
     char parent[BB_PATH_CAP], directory[BB_PATH_CAP];
 #if defined(_WIN32)
     wchar_t wide_parent[BB_PATH_CAP];
     DWORD n;
-
+#else
+    const char *home_dir;
+    size_t length;
+#endif
+    if (!out || capacity == 0) return false;
+    out[0] = '\0';
+    /* 작업 폴더나 앱 번들이 아닌 사용자별 데이터 폴더에 저장한다. */
+#if defined(_WIN32)
     n = GetEnvironmentVariableW(L"LOCALAPPDATA", wide_parent, BB_PATH_CAP);
     if (n == 0 || n >= BB_PATH_CAP || !from_wide(wide_parent, parent, sizeof parent)) return false;
 #else
-    const char *home_dir;
-
     home_dir = getenv("HOME");
-    if (!home_dir || !copy_path(parent, sizeof parent, home_dir)) return false;
+    if (!home_dir || !home_dir[0]) return false;
+    length = strlen(home_dir);
+    if (length >= sizeof parent) return false;
+    memcpy(parent, home_dir, length + 1);
 #if defined(__APPLE__)
     if (!bb_path_join(directory, sizeof directory, parent, "Library") || !make_directory(directory)) return false;
     if (!bb_path_join(parent, sizeof parent, directory, "Application Support") || !make_directory(parent)) return false;
@@ -187,116 +195,130 @@ bool bb_platform_score_path(char *out, size_t capacity)
     return bb_path_join(out, capacity, directory, "Scores.txt");
 }
 
+static bool valid_score(BbScore score)
+{
+    int i;
+    if (score.round < 1 || score.round > BB_SCORE_MAX_ROUND || score.name[3] != '\0') return false;
+    for (i = 0; i < 3; ++i)
+        if (!((score.name[i] >= 'A' && score.name[i] <= 'Z') ||
+              (score.name[i] >= '0' && score.name[i] <= '9') || score.name[i] == '.')) return false;
+    return true;
+}
+
 void bb_scores_insert(BbScore scores[BB_SCORE_COUNT], size_t *count, BbScore score)
 {
-    /* 점수 내림차순, 동점이면 도달 라운드 내림차순으로 상위 10개만 남긴다. */
-    size_t length = *count < BB_SCORE_COUNT ? *count : BB_SCORE_COUNT;
-    size_t position = 0;
-    size_t i;
-
+    size_t length, position, i;
+    if (!scores || !count || !valid_score(score)) return;
+    length = *count < BB_SCORE_COUNT ? *count : BB_SCORE_COUNT;
+    *count = length;
+    position = 0;
     while (position < length && (scores[position].score > score.score ||
            (scores[position].score == score.score && scores[position].round >= score.round))) ++position;
     if (position >= BB_SCORE_COUNT) return;
     if (length < BB_SCORE_COUNT) ++length;
     for (i = length - 1; i > position; --i) scores[i] = scores[i - 1];
     scores[position] = score;
-    scores[position].name[3] = '\0';
     *count = length;
+}
+
+static bool parse_score(const char *line, BbScore *record)
+{
+    char *end;
+    const char *cursor = line;
+    unsigned long score, round;
+    if (*cursor < '0' || *cursor > '9') return false;
+    errno = 0;
+    score = strtoul(cursor, &end, 10);
+    if (errno || score > UINT_MAX || *end != ' ') return false;
+    cursor = end + 1;
+    if (*cursor < '0' || *cursor > '9') return false;
+    errno = 0;
+    round = strtoul(cursor, &end, 10);
+    if (errno || round < 1 || round > BB_SCORE_MAX_ROUND || *end != ' ') return false;
+    cursor = end + 1;
+    if (strlen(cursor) != 3) return false;
+    record->score = (unsigned)score;
+    record->round = (int)round;
+    memcpy(record->name, cursor, sizeof record->name);
+    return valid_score(*record);
 }
 
 bool bb_scores_load(const char *path, BbScore scores[BB_SCORE_COUNT], size_t *out_count)
 {
     FILE *file;
-    size_t count;
-    size_t consumed;
-    char line[128];
-    int lines;
-    char *cursor;
-    char *end;
-    unsigned long score;
-    unsigned long round;
-    int next;
-    size_t name_length;
-    bool valid;
-    size_t i;
+    BbScore loaded[BB_SCORE_COUNT] = {0};
     BbScore record;
-    bool ok;
-
-    /* 유효한 기록만 다시 삽입해 정렬하며, 손상된 줄은 건너뛴다. */
+    char line[128];
+    size_t count = 0, length = 0, consumed = 0;
+    int next, lines = 0;
+    bool bad_line = false, ok = true;
+    if (!out_count) return false;
     *out_count = 0;
+    if (!path || !path[0] || !scores) return false;
     file = bb_platform_fopen(path, "rb");
-    count = 0;
-    consumed = 0;
     if (!file) return errno == ENOENT;
-    /* 손상되었거나 외부에서 수정된 파일도 읽기 범위를 제한한다. */
-    for (lines = 0; lines < 512 && consumed < 65536 && fgets(line, sizeof line, file); ++lines) {
-        cursor = line;
-        consumed += strlen(line);
-        if (!strchr(line, '\n') && !feof(file)) {
-            while (consumed < 65536 && (next = fgetc(file)) != EOF) {
-                ++consumed;
-                if (next == '\n') break;
+    /* 한 글자씩 읽어 긴 행과 NUL 문자를 확실히 거부한다.
+     * 최대 512행, 64 KiB만 읽어 손상된 파일에도 실행 시간이 제한된다. */
+    while (ok) {
+        next = fgetc(file);
+        if (next != EOF && ++consumed > 65536) { ok = false; break; }
+        if (next == '\n' || next == EOF) {
+            if (next == '\n' || length > 0 || bad_line) {
+                if (++lines > 512) { ok = false; break; }
+                if (length > 0 && line[length - 1] == '\r') --length;
+                line[length] = '\0';
+                if (!bad_line && parse_score(line, &record)) bb_scores_insert(loaded, &count, record);
             }
-            continue;
+            if (next == EOF) break;
+            length = 0;
+            bad_line = false;
+        } else if (next == 0 || length >= sizeof line - 1) {
+            bad_line = true;
+        } else {
+            line[length++] = (char)next;
         }
-        if (*cursor < '0' || *cursor > '9') continue;
-        errno = 0;
-        score = strtoul(cursor, &end, 10);
-        if (errno || score > UINT_MAX || *end != ' ') continue;
-        cursor = end + 1;
-        if (*cursor < '0' || *cursor > '9') continue;
-        round = strtoul(cursor, &end, 10);
-        if (errno || round > 3 || *end != ' ') continue;
-        cursor = end + 1;
-        name_length = strcspn(cursor, "\r\n");
-        if (name_length != 3) continue;
-        valid = true;
-        for (i = 0; i < 3; ++i)
-            if (!((cursor[i] >= 'A' && cursor[i] <= 'Z') ||
-                  (cursor[i] >= '0' && cursor[i] <= '9') || cursor[i] == '.')) valid = false;
-        if (!valid) continue;
-        record.score = (unsigned)score;
-        record.round = (int)round;
-        record.name[0] = cursor[0];
-        record.name[1] = cursor[1];
-        record.name[2] = cursor[2];
-        record.name[3] = '\0';
-        bb_scores_insert(scores, &count, record);
     }
-    ok = consumed <= 65536 && fgetc(file) == EOF && !ferror(file);
+    if (ferror(file)) ok = false;
     if (fclose(file) != 0) ok = false;
-    if (ok) *out_count = count;
+    if (ok) {
+        memcpy(scores, loaded, sizeof loaded);
+        *out_count = count;
+    }
     return ok;
 }
 
 bool bb_scores_save(const char *path, const BbScore *scores, size_t count)
 {
     char temporary[BB_PATH_CAP];
-    int n;
-    FILE *file;
-    bool ok;
+    int n, attempt;
+    FILE *file = NULL;
+    bool ok = true;
     size_t i;
 #if defined(_WIN32)
     wchar_t wide_temp[BB_PATH_CAP], wide_path[BB_PATH_CAP];
 #endif
-
-    /* 임시 파일을 완전히 닫은 뒤 교체해 대상 파일에 부분 쓰기를 피한다. */
-    if (!path[0] || count > BB_SCORE_COUNT) return false;
-    n = snprintf(temporary, sizeof temporary, "%s.tmp", path);
-    if (n < 0 || (size_t)n >= sizeof temporary) return false;
-    file = bb_platform_fopen(temporary, "wb");
+    if (!path || !path[0] || count > BB_SCORE_COUNT || (count > 0 && !scores)) return false;
+    for (i = 0; i < count; ++i)
+        if (!valid_score(scores[i])) return false;
+    /* x 모드는 이미 있는 파일을 덮어쓰지 않는다. 다른 실행 중인 게임이나
+     * 이전 실행의 임시 파일을 만나면 다음 번호를 사용한다. */
+    for (attempt = 0; attempt < 32; ++attempt) {
+        n = snprintf(temporary, sizeof temporary, "%s.tmp.%d", path, attempt);
+        if (n < 0 || (size_t)n >= sizeof temporary) return false;
+        file = bb_platform_fopen(temporary, "wbx");
+        if (file) break;
+        if (errno != EEXIST) return false;
+    }
     if (!file) return false;
-    ok = true;
     for (i = 0; i < count; ++i)
         if (fprintf(file, "%u %d %.3s\n", scores[i].score, scores[i].round, scores[i].name) < 0) ok = false;
     if (fclose(file) != 0) ok = false;
 #if defined(_WIN32)
-    if (!to_wide(temporary, wide_temp) || !to_wide(path, wide_path)) return false;
+    if (ok) ok = to_wide(temporary, wide_temp) && to_wide(path, wide_path);
     if (ok) ok = MoveFileExW(wide_temp, wide_path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
-    if (!ok) DeleteFileW(wide_temp);
 #else
     if (ok) ok = rename(temporary, path) == 0;
-    if (!ok) remove(temporary);
 #endif
+    if (!ok) bb_platform_remove(temporary);
     return ok;
 }

@@ -2,12 +2,13 @@
 #include "bb_levels.h"
 #include "bb_raylib_types.h"
 
-#include <limits.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
-static const Color player_color = {92, 230, 52, 255};
+static const Color player_colors[BB_MAX_PLAYERS] = {
+    {92, 230, 52, 255}, {80, 184, 255, 255}
+};
 
 /* raylib 파일 로더 콜백의 반환 버퍼는 raylib이 MemFree로 해제한다. */
 static unsigned char *read_asset(const char *path, int *size)
@@ -47,9 +48,10 @@ bool bb_assets_validate(const char *directory, uint8_t *maps)
     /* 창과 오디오 장치를 열기 전에 이미지·오디오를 디코딩하고 폰트 파일을 확인한다. */
     static const struct { const char *name; int width, height; } images[] = {
         {"Levels.png", 32, 84}, {"BubbleCharacter.png", 96, 64},
-        {"Enemys.png", 256, 192},
+        {"BobbleCharacter.png", 96, 64},
+        {"Enemys.png", 256, 192}, {"Items.png", 576, 64},
         {"LevelTiles.png", 40, 200}, {"AttackBubble.png", 112, 16},
-        {"BubbleLarge.png", 288, 32}, {"Items.png", 576, 64}, {"Logo.png", 143, 112}
+        {"BubbleLarge.png", 288, 32}, {"Logo.png", 143, 112}
     };
     const char *sounds[] = {"SFX/Bubble Bobble SFX (2).wav", "SFX/Bubble Bobble SFX (3).wav", "SFX/Jump.wav", "SFX/The Quest Begins.ogg"};
     char path[BB_PATH_CAP];
@@ -109,17 +111,18 @@ bool bb_assets_load(BBAssets *a, const char *directory, bool audio)
 
     /* 중간에 실패해도 호출자가 bb_assets_unload로 로드된 자원만 정리할 수 있다. */
     memset(a, 0, sizeof *a);
-    a->player = texture(directory, "BubbleCharacter.png");
+    a->players[0] = texture(directory, "BubbleCharacter.png");
+    a->players[1] = texture(directory, "BobbleCharacter.png");
     a->enemy = texture(directory, "Enemys.png");
+    a->items = texture(directory, "Items.png");
     a->tiles = texture(directory, "LevelTiles.png");
     a->bubble = texture(directory, "AttackBubble.png");
     a->large_bubble = texture(directory, "BubbleLarge.png");
-    a->items = texture(directory, "Items.png");
     a->logo = texture(directory, "Logo.png");
     if (!path_for(path, directory, "NES_Font.ttf")) return false;
     a->font = LoadFontEx(path, 8, NULL, 95);
-    if (!a->player.id || !a->enemy.id || !a->tiles.id ||
-        !a->bubble.id || !a->large_bubble.id || !a->items.id || !a->logo.id || !IsFontValid(a->font) ||
+    if (!a->players[0].id || !a->players[1].id || !a->enemy.id || !a->items.id || !a->tiles.id ||
+        !a->bubble.id || !a->large_bubble.id || !a->logo.id || !IsFontValid(a->font) ||
         a->font.texture.id == GetFontDefault().texture.id) return false;
     SetTextureFilter(a->font.texture, TEXTURE_FILTER_POINT);
     a->audio = audio && IsAudioDeviceReady();
@@ -142,16 +145,17 @@ bool bb_assets_load(BBAssets *a, const char *directory, bool audio)
 
 void bb_assets_unload(BBAssets *a)
 {
-    Texture2D textures[7];
+    Texture2D textures[8];
     size_t i;
 
-    textures[0] = a->player;
-    textures[1] = a->enemy;
+    textures[0] = a->players[0];
+    textures[1] = a->players[1];
     textures[2] = a->tiles;
     textures[3] = a->bubble;
     textures[4] = a->large_bubble;
-    textures[5] = a->items;
-    textures[6] = a->logo;
+    textures[5] = a->logo;
+    textures[6] = a->enemy;
+    textures[7] = a->items;
     for (i = 0; i < sizeof textures / sizeof textures[0]; ++i) if (textures[i].id) UnloadTexture(textures[i]);
     if (a->font.texture.id && a->font.texture.id != GetFontDefault().texture.id) UnloadFont(a->font);
     if (IsSoundValid(a->fire)) UnloadSound(a->fire);
@@ -162,12 +166,12 @@ void bb_assets_unload(BBAssets *a)
     memset(a, 0, sizeof *a);
 }
 
-void bb_audio_events(const BBAssets *a, uint32_t events)
+void bb_audio_events(const BBAssets *a, BBEvents events)
 {
     if (!a->audio) return;
-    if (events & BB_EVENT_FIRE) PlaySound(a->fire);
-    if (events & BB_EVENT_JUMP) PlaySound(a->jump);
-    if (events & BB_EVENT_DEATH) PlaySound(a->death);
+    if (events.fire) PlaySound(a->fire);
+    if (events.jump) PlaySound(a->jump);
+    if (events.death) PlaySound(a->death);
 }
 
 static void text(const BBAssets *a, const char *value, float x, float y, Color color)
@@ -241,163 +245,197 @@ static void pickup_sprite(const BBAssets *a, const BBPickup *pickup)
            pickup->body.x, pickup->body.y, false);
 }
 
-static void energy_hud(const BBAssets *a, const BBPlayer *player, int x, Color color)
+static void player_hud(const BBAssets *a, const BBPlayer *player, int index)
 {
-    float energy;
-    int fill;
-    char label[8];
+    float energy = fmaxf(0, fminf(1, player->energy));
+    int x = 8 + index * 128;
+    int fill = (int)(energy * 34 + 0.5f);
+    Color color = player_colors[index];
+    char label[32];
+    char value[16];
 
-    energy = fmaxf(0.0f, fminf(1.0f, player->energy));
-    fill = (int)(energy * 46.0f + 0.5f);
+    snprintf(label, sizeof label, "P%d", index + 1);
+    text(a, label, (float)x, 2, color);
+    snprintf(value, sizeof value, "%06d", player->score < 0 ? 0 : player->score);
+    text(a, value, (float)(x + 112) - MeasureTextEx(a->font, value, 8, 0).x, 2, color);
     if (player->state == BB_PLAYER_OUT) color = GRAY;
     else if (player->boosting) color = YELLOW;
-    text(a, "E", (float)x, 13.0f, color);
-    DrawRectangle(x + 12, 14, 48, 7, color);
-    DrawRectangle(x + 13, 15, 46, 5, bb_color(32, 32, 32, 255));
-    if (fill > 0) DrawRectangle(x + 13, 15, fill, 5, color);
-    if (player->state == BB_PLAYER_OUT) snprintf(label, sizeof label, "OUT");
-    else if (player->boosting)
-        snprintf(label, sizeof label, "X2 %d", (int)ceil((double)energy * BB_ENERGY_BOOST_SECONDS));
-    else snprintf(label, sizeof label, "%3d", (int)(energy * 100.0f));
-    text(a, label, (float)(x + 64), 13.0f, color);
+    text(a, "MANA", (float)x, 13, color);
+    DrawRectangle(x + 34, 14, 36, 7, color);
+    DrawRectangle(x + 35, 15, 34, 5, bb_color(32, 32, 32, 255));
+    if (fill > 0) DrawRectangle(x + 35, 15, fill, 5, color);
+    if (player->state == BB_PLAYER_OUT) snprintf(value, sizeof value, "OUT");
+    else if (player->boosting) snprintf(value, sizeof value, "X2 %dS", (int)ceil((double)energy * BB_ENERGY_BOOST_SECONDS));
+    else snprintf(value, sizeof value, "%d", (int)(energy * 100));
+    text(a, value, (float)(x + 112) - MeasureTextEx(a->font, value, 8, 0).x, 13, color);
+    if (player->state == BB_PLAYER_OUT) snprintf(label, sizeof label, "P%d OUT", index + 1);
+    else snprintf(label, sizeof label, "P%d LIFE %d", index + 1, player->lives < 0 ? 0 : player->lives);
+    if (index == 0) text(a, label, 8, 214, player_colors[index]);
+    else text(a, label, 248 - MeasureTextEx(a->font, label, 8, 0).x, 214, player_colors[index]);
 }
 
 static void leaderboard(const BBAssets *a, const BBUI *ui, float top, size_t maximum)
 {
-    size_t limit;
+    size_t limit = ui->score_count < maximum ? ui->score_count : maximum;
     size_t i;
-    char line[64];
-
-    text(a, "SCORE   ROUND  NAME", 44, top, YELLOW);
-    limit = ui->score_count < maximum ? ui->score_count : maximum;
+    char value[24];
+    text(a, "NO", 8, top, YELLOW);
+    text(a, "NAME", 32, top, YELLOW);
+    text(a, "SCORE", 132, top, YELLOW);
+    text(a, "ROUND", 196, top, YELLOW);
     for (i = 0; i < limit; ++i) {
-        snprintf(line, sizeof line, "%2u %6u    %d    %.3s", (unsigned)i + 1, ui->scores[i].score, ui->scores[i].round, ui->scores[i].name);
-        centered(a, line, top + 14 + (float)i * 12, WHITE);
+        float y = top + 14 + (float)i * 12;
+        snprintf(value, sizeof value, "%u", (unsigned)i + 1);
+        text(a, value, 8, y, WHITE);
+        text(a, ui->scores[i].name, 32, y, WHITE);
+        snprintf(value, sizeof value, "%u", ui->scores[i].score);
+        text(a, value, 172 - MeasureTextEx(a->font, value, 8, 0).x, y, WHITE);
+        snprintf(value, sizeof value, "%d", ui->scores[i].round);
+        text(a, value, 216, y, WHITE);
     }
     if (!limit) centered(a, "NO SCORES YET", top + 20, WHITE);
 }
 
+static void score_screen(const BBAssets *a, const BBGame *g, const BBUI *ui)
+{
+    int i;
+    char label[48];
+    float initial_x;
+    if (g->player_count == 0) centered(a, "LEADERBOARD", 16, YELLOW);
+    else centered(a, g->won ? "ALL ROUNDS CLEAR!" : "GAME OVER", 16, YELLOW);
+    for (i = 0; i < g->player_count; ++i) {
+        snprintf(label, sizeof label, "P%d SCORE %d", i + 1, g->players[i].score < 0 ? 0 : g->players[i].score);
+        centered(a, label, 34.0f + (float)i * 12, player_colors[i]);
+    }
+    if (ui->entering_initials) {
+        snprintf(label, sizeof label, "P%d ENTER INITIALS", ui->score_player + 1);
+        centered(a, label, 66, player_colors[ui->score_player]);
+        centered(a, ui->initials, 80, WHITE);
+        initial_x = floorf((BB_SCREEN_WIDTH - MeasureTextEx(a->font, ui->initials, 8, 0).x) * 0.5f);
+        DrawRectangle((int)initial_x + ui->initial_cursor * 8, 89, 7, 1, player_colors[ui->score_player]);
+        leaderboard(a, ui, 104, 6);
+        centered(a, ui->save_failed ? "ENTER RETRY OR ESC CANCEL" : "ARROWS LETTER  ENTER NEXT", 198, GRAY);
+        centered(a, "ESC CANCEL ENTRY", 214, GRAY);
+    } else {
+        leaderboard(a, ui, g->player_count == 0 ? 42.0f : 66.0f, g->player_count == 0 ? 10 : 9);
+        centered(a, "ENTER TO RETURN", 202, GRAY);
+    }
+    if (ui->save_failed) {
+        DrawRectangle(0, 212, BB_SCREEN_WIDTH, 12, BLACK);
+        centered(a, ui->entering_initials ? "SAVE FAILED  ENTER RETRY" : "SCORES UNAVAILABLE", 214, RED);
+    }
+}
+
 static void menu(const BBAssets *a, const BBUI *ui)
 {
-    const char *entries[BB_MENU_COUNT] = {"PLAY", "LEADERBOARD"};
+    const char *entries[BB_MENU_COUNT] = {"1 PLAYER", "2 PLAYERS", "LEADERBOARD"};
     int i;
-    float y;
-
-    DrawTexture(a->logo, (BB_SCREEN_WIDTH - a->logo.width) / 2, 4, WHITE);
+    Color color;
+    DrawTexture(a->logo, (BB_SCREEN_WIDTH - a->logo.width) / 2, 0, WHITE);
     for (i = 0; i < BB_MENU_COUNT; ++i) {
-        y = 126.0f + (float)i * 18;
-        centered(a, entries[i], y, i == ui->menu_selection ? player_color : WHITE);
-        if (i == ui->menu_selection) text(a, ">", 56, y, player_color);
+        color = GRAY;
+        if (i == ui->menu_selection) {
+            color = YELLOW;
+            if (i < 2) color = player_colors[i];
+            DrawRectangle(68, 119 + i * 13, 4, 4, color);
+        }
+        text(a, entries[i], 80, (float)(117 + i * 13), color);
     }
-    centered(a, "UP DOWN ENTER TO SELECT", 174, GRAY);
-    centered(a, "WASD OR ARROWS", 190, GRAY);
-    centered(a, "SPACE JUMP  Z FIRE", 202, GRAY);
-    centered(a, "M SOUND  F11 FULLSCREEN", 214, GRAY);
+    centered(a, "UP DOWN ENTER  OR 1 2", 160, WHITE);
+    text(a, "MOVE", 32, 174, GRAY);
+    text(a, "JUMP", 104, 174, GRAY);
+    text(a, "FIRE", 184, 174, GRAY);
+    text(a, "P1", 8, 187, player_colors[0]);
+    text(a, "A D", 32, 187, player_colors[0]);
+    text(a, "W SPACE", 104, 187, player_colors[0]);
+    text(a, "E Z", 184, 187, player_colors[0]);
+    text(a, "P2", 8, 201, player_colors[1]);
+    text(a, "ARROWS", 32, 201, player_colors[1]);
+    text(a, "UP", 104, 201, player_colors[1]);
+    text(a, "RSHIFT", 184, 201, player_colors[1]);
+    centered(a, "P PAUSE  M SOUND  F11 FULL", 215, GRAY);
 }
 
 void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
 {
+    int enemy_frame;
+    int i, x, y, frame, column, row;
+    const BBEnemy *enemy;
+    const BBBubble *bubble;
+    const BBPlayer *player;
+    char label[32];
+
     ClearBackground(BLACK);
     if (g->state == BB_STATE_MENU) { menu(a, ui); return; }
-    if (g->state == BB_STATE_SCORE) {
-        char line[48];
-        bool browse;
-
-        centered(a, g->won ? "CONGRATULATIONS!" : "BUBBLE BOBBLE SCORES", 16, player_color);
-        if (g->players[0].active) {
-            snprintf(line, sizeof line, "SCORE %d", g->players[0].score < 0 ? 0 : g->players[0].score);
-            centered(a, line, 36, player_color);
-        }
-        if (ui->entering_initials) {
-            centered(a, "ENTER INITIALS", 68, YELLOW);
-            centered(a, ui->initials, 82, WHITE);
-            text(a, "_", 116.0f + (float)ui->initial_cursor * 8, 88, player_color);
-        }
-        browse = !g->players[0].active;
-        leaderboard(a, ui, browse ? 54.0f : 106.0f, browse ? 10 : 5);
-        centered(a, ui->entering_initials ? "UP DOWN LETTER  ENTER NEXT" : "ENTER TO RETURN", 202, GRAY);
-        if (ui->save_failed) centered(a, "SCORE SAVE FAILED", 214, RED);
-        return;
+    if (g->state == BB_STATE_SCORE) { score_screen(a, g, ui); return; }
+    if (g->state != BB_STATE_INTRO) {
+        for (y = 0; y < BB_MAP_HEIGHT; ++y)
+            for (x = 0; x < BB_MAP_WIDTH; ++x)
+                if (g->maps[g->level][y][x])
+                    DrawTextureRec(a->tiles, bb_rectangle(0, (float)(g->level * 8), 8, 8),
+                                   bb_vector2((float)(x * 8), (float)(y * 8)), WHITE);
     }
-    {
-        int enemy_frame;
-        int i;
-        int x;
-        int y;
-        int frame;
-        int column;
-        int row;
-        const BBEnemy *enemy;
-        const BBBubble *bubble;
-        const BBPickup *pickup;
-        const BBBoulder *boulder;
-        const BBPlayer *player;
-        char label[48];
-        char round[24];
-
-        if (g->state != BB_STATE_INTRO) {
-            /* 레벨 타일은 한 아틀라스에서 레벨마다 8픽셀 행을 차지한다. */
-            for (y = 0; y < BB_MAP_HEIGHT; ++y)
-                for (x = 0; x < BB_MAP_WIDTH; ++x)
-                    if (g->maps[g->level][y][x])
-                        DrawTextureRec(a->tiles, bb_rectangle(0, (float)(g->level * 8), 8, 8), bb_vector2((float)(x * 8), (float)(y * 8)), WHITE);
+    enemy_frame = (int)(g->level_time * 4) % 2;
+    for (i = 0; i < BB_MAX_ENEMIES; ++i) {
+        enemy = &g->enemies[i];
+        if (!enemy->active || enemy->state == BB_ENEMY_CAPTURED) continue;
+        if (enemy->state == BB_ENEMY_SPAWNING && enemy->age <= enemy->spawn_delay) continue;
+        if (enemy->state == BB_ENEMY_DEAD) frame = 12 + (int)(enemy->age * 4) % 4;
+        else {
+            frame = enemy_frame;
+            if (enemy->angry) frame += 2;
         }
-        enemy_frame = (int)(g->level_time * 4) % 2;
-        for (i = 0; i < BB_MAX_ENEMIES; ++i) {
-            enemy = &g->enemies[i];
-            if (!enemy->active || enemy->state == BB_ENEMY_CAPTURED ||
-                (enemy->state == BB_ENEMY_SPAWNING && enemy->age <= enemy->spawn_delay)) continue;
-            frame = enemy->state == BB_ENEMY_DEAD ? 12 + (int)(enemy->age * 4) % 4 : enemy_frame + (enemy->angry ? 2 : 0);
-            sprite(a->enemy, frame, enemy_row(enemy->type), 16, enemy->body.x, enemy->body.y, enemy->facing > 0);
-        }
-        for (i = 0; i < BB_MAX_BUBBLES; ++i) {
-            bubble = &g->bubbles[i];
-            if (!bubble->active) continue;
-            frame = bubble->popping ? 5 + ((int)(fmaxf(0, 0.25f - bubble->pop_timer) * 8) % 2) : bubble->age < 0.333f ? (int)(bubble->age * 12) : 3 + (int)(bubble->age * 12) % 2;
-            /* 포획 중에는 일반 버블 대신 적 아틀라스의 포획 프레임을 그린다. */
-            if (bubble->captured_enemy < 0 || bubble->popping) sprite(a->bubble, frame, 0, 16, bubble->body.x, bubble->body.y, false);
-            if (!bubble->popping && bubble->captured_enemy >= 0 && bubble->captured_enemy < BB_MAX_ENEMIES)
-                sprite(a->enemy, 6 + enemy_frame, enemy_row(g->enemies[bubble->captured_enemy].type), 16, bubble->body.x, bubble->body.y, false);
-        }
-        for (i = 0; i < BB_MAX_PICKUPS; ++i) {
-            pickup = &g->pickups[i];
-            if (pickup->active) pickup_sprite(a, pickup);
-        }
-        for (i = 0; i < BB_MAX_BOULDERS; ++i) {
-            boulder = &g->boulders[i];
-            if (boulder->active) sprite(a->enemy, 5 - (int)(boulder->age * 4) % 6, 2, 16, boulder->body.x, boulder->body.y, false);
-        }
-        player = &g->players[0];
-        if (player->active && player->state != BB_PLAYER_OUT &&
-            !(player->invulnerable > 0 && player->state != BB_PLAYER_DEAD && (int)(g->level_time * 12) % 2)) {
-            column = (int)(g->level_time * 7) % (fabsf(player->body.vx) > 0.1f ? 4 : 2);
-            row = 0;
-            if (!player->body.grounded) { row = 1; column = 2 + (int)(g->level_time * 4) % 2; }
-            if (player->attack_timer > 0) { row = 2; column = 0; }
-            if (player->state == BB_PLAYER_DEAD) { row = 3; column = (int)(g->level_time * 10) % 6; }
-            if (g->state == BB_STATE_INTRO) { row = 2; column = 1 + (int)(g->state_time * 4) % 2; }
-            sprite(a->player, column, row, 16, player->body.x, player->body.y, player->facing < 0);
-            if (g->state == BB_STATE_INTRO) sprite(a->large_bubble, 3 + (int)(g->state_time * 4) % 2, 0, 32, player->body.x, player->body.y, false);
-        }
-        /* 객체를 그린 뒤 화면 상하단을 가려 HUD 영역으로 침범하지 않게 한다. */
-        DrawRectangle(0, 0, BB_SCREEN_WIDTH, 24, BLACK);
-        DrawRectangle(0, 212, BB_SCREEN_WIDTH, 12, BLACK);
-        if (player->active) {
-            snprintf(label, sizeof label, "SCORE %06d", player->score < 0 ? 0 : player->score);
-            text(a, label, 8, 2, player_color);
-            energy_hud(a, player, 8, player_color);
-            snprintf(label, sizeof label, "LIVES %d", player->lives < 0 ? 0 : player->lives);
-            text(a, label, 8, 214, player_color);
-        }
-        snprintf(round, sizeof round, "ROUND %d OF %d", g->level + 1, BB_LEVEL_COUNT);
-        centered(a, round, 214, WHITE);
-        if (g->state == BB_STATE_INTRO) {
-            centered(a, "READY!", 88, YELLOW);
-            centered(a, "ENTER TO START", 110, WHITE);
-            centered(a, "CHARGE 15S  BOOST 5S", 130, GRAY);
-            centered(a, "BOOST: MOVE SPEED X2", 142, GRAY);
-        }
-        if (g->state == BB_STATE_CLEAR) centered(a, "ROUND CLEAR!", 100, YELLOW);
-        if (ui->paused) { DrawRectangle(48, 86, 160, 42, BLACK); centered(a, "PAUSED", 94, YELLOW); centered(a, "P TO RESUME", 112, WHITE); }
+        sprite(a->enemy, frame, enemy_row(enemy->type), 16, enemy->body.x, enemy->body.y, enemy->facing > 0);
+    }
+    for (i = 0; i < BB_MAX_BUBBLES; ++i) {
+        bubble = &g->bubbles[i];
+        if (!bubble->active) continue;
+        if (bubble->popping) frame = 5 + (int)(fmaxf(0, 0.25f - bubble->pop_timer) * 8) % 2;
+        else if (bubble->age < 0.333f) frame = (int)(bubble->age * 12);
+        else frame = 3 + (int)(bubble->age * 12) % 2;
+        if (bubble->captured_enemy < 0 || bubble->popping)
+            sprite(a->bubble, frame, 0, 16, bubble->body.x, bubble->body.y, false);
+        else if (bubble->captured_enemy < BB_MAX_ENEMIES)
+            sprite(a->enemy, 6 + enemy_frame, enemy_row(g->enemies[bubble->captured_enemy].type),
+                   16, bubble->body.x, bubble->body.y, false);
+    }
+    for (i = 0; i < BB_MAX_PICKUPS; ++i)
+        if (g->pickups[i].active) pickup_sprite(a, &g->pickups[i]);
+    for (i = 0; i < BB_MAX_BOULDERS; ++i)
+        if (g->boulders[i].active)
+            sprite(a->enemy, 5 - (int)(g->boulders[i].age * 4) % 6, 2, 16,
+                   g->boulders[i].body.x, g->boulders[i].body.y, false);
+    for (i = 0; i < g->player_count; ++i) {
+        player = &g->players[i];
+        if (!player->active || player->state == BB_PLAYER_OUT) continue;
+        if (player->invulnerable > 0 && player->state != BB_PLAYER_DEAD && (int)(g->level_time * 12) % 2) continue;
+        if (fabsf(player->body.vx) > 0.1f) column = (int)(g->level_time * 7) % 4;
+        else column = (int)(g->level_time * 7) % 2;
+        row = 0;
+        if (!player->body.grounded) { row = 1; column = 2 + (int)(g->level_time * 4) % 2; }
+        if (player->attack_timer > 0) { row = 2; column = 0; }
+        if (player->state == BB_PLAYER_DEAD) { row = 3; column = (int)(g->level_time * 10) % 6; }
+        if (g->state == BB_STATE_INTRO) { row = 2; column = 1 + (int)(g->state_time * 4) % 2; }
+        sprite(a->players[i], column, row, 16, player->body.x, player->body.y, player->facing < 0);
+        if (g->state == BB_STATE_INTRO)
+            sprite(a->large_bubble, 3 + (int)(g->state_time * 4) % 2, 0, 32, player->body.x, player->body.y, false);
+    }
+    DrawRectangle(0, 0, BB_SCREEN_WIDTH, 24, BLACK);
+    DrawRectangle(0, 212, BB_SCREEN_WIDTH, 12, BLACK);
+    for (i = 0; i < g->player_count; ++i)
+        if (g->players[i].active) player_hud(a, &g->players[i], i);
+    snprintf(label, sizeof label, "ROUND %d", g->level + 1);
+    centered(a, label, 214, WHITE);
+    if (g->state == BB_STATE_INTRO) {
+        centered(a, "READY!", 88, YELLOW);
+        centered(a, "ENTER TO START", 110, WHITE);
+        centered(a, "CHARGE 15S  BOOST 5S", 130, GRAY);
+        centered(a, "BOOST: MOVE SPEED X2", 142, GRAY);
+    }
+    if (g->state == BB_STATE_CLEAR) centered(a, "ROUND CLEAR!", 100, YELLOW);
+    if (ui->paused) {
+        DrawRectangle(48, 86, 160, 42, BLACK);
+        centered(a, "PAUSED", 94, YELLOW);
+        centered(a, "P TO RESUME", 112, WHITE);
     }
 }

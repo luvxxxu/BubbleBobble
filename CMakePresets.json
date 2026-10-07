@@ -13,7 +13,8 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "ON",
-        "BB_WARNINGS_AS_ERRORS": "ON"
+        "BB_WARNINGS_AS_ERRORS": "ON",
+        "BB_BUILD_GAME": "ON"
       }
     },
     {
@@ -51,16 +52,32 @@
     {
       "name": "windows-x64",
       "inherits": "base",
-      "generator": "Visual Studio 17 2022",
+      "generator": "Visual Studio 18 2026",
       "architecture": "x64",
       "displayName": "Windows x86_64 / AMD64 (MSVC)"
     },
     {
       "name": "windows-x86",
       "inherits": "base",
-      "generator": "Visual Studio 17 2022",
+      "generator": "Visual Studio 18 2026",
       "architecture": "Win32",
       "displayName": "Windows x86 (MSVC)"
+    },
+    {
+      "name": "windows-debug-x64",
+      "inherits": "windows-x64",
+      "displayName": "Windows x86_64 / AMD64 (MSVC, Debug)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "windows-debug-x86",
+      "inherits": "windows-x86",
+      "displayName": "Windows x86 (MSVC, Debug)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     },
     {
       "name": "windows-cross-base",
@@ -110,7 +127,7 @@
     {
       "name": "sanitizers",
       "configurePreset": "sanitizers",
-      "configuration": "Release",
+      "configuration": "Debug",
       "jobs": 4
     },
     {
@@ -123,6 +140,18 @@
       "name": "windows-x86",
       "configurePreset": "windows-x86",
       "configuration": "Release",
+      "jobs": 4
+    },
+    {
+      "name": "windows-debug-x64",
+      "configurePreset": "windows-debug-x64",
+      "configuration": "Debug",
+      "jobs": 4
+    },
+    {
+      "name": "windows-debug-x86",
+      "configurePreset": "windows-debug-x86",
+      "configuration": "Debug",
       "jobs": 4
     },
     {
@@ -175,7 +204,7 @@
     {
       "name": "sanitizers",
       "configurePreset": "sanitizers",
-      "configuration": "Release",
+      "configuration": "Debug",
       "output": {
         "outputOnFailure": true
       },

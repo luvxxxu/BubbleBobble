@@ -5,7 +5,7 @@
 
 #include "raylib.h"
 
-/* C99 compound literal 없이 raylib 값 타입을 만든다. */
+/* raylib 값 타입을 생성하는 공통 함수. */
 Vector2 bb_vector2(float x, float y);
 Rectangle bb_rectangle(float x, float y, float width, float height);
 Color bb_color(unsigned char r, unsigned char g, unsigned char b, unsigned char a);
