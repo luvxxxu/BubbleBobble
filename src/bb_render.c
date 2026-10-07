@@ -13,24 +13,18 @@ static const Color player_colors[BB_MAX_PLAYERS] = {
 /* raylib 파일 로더 콜백의 반환 버퍼는 raylib이 MemFree로 해제한다. */
 static unsigned char *read_asset(const char *path, int *size)
 {
-    FILE *file;
-    long length;
-    unsigned char *data;
-    size_t received;
-    int closed;
-
     *size = 0;
-    file = bb_platform_fopen(path, "rb");
+    FILE *file = bb_platform_fopen(path, "rb");
     if (!file) return NULL;
     if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return NULL; }
-    length = ftell(file);
+    long length = ftell(file);
     if (length <= 0 || length > 64 * 1024 * 1024 || fseek(file, 0, SEEK_SET) != 0) {
         fclose(file); return NULL;
     }
-    data = MemAlloc((unsigned int)length);
+    unsigned char *data = MemAlloc((unsigned int)length);
     if (!data) { fclose(file); return NULL; }
-    received = fread(data, 1, (size_t)length, file);
-    closed = fclose(file);
+    size_t received = fread(data, 1, (size_t)length, file);
+    int closed = fclose(file);
     if (received != (size_t)length || closed != 0) { MemFree(data); return NULL; }
     *size = (int)length;
     return data;
@@ -55,15 +49,9 @@ bool bb_assets_validate(const char *directory, uint8_t *maps)
     };
     const char *sounds[] = {"SFX/Bubble Bobble SFX (2).wav", "SFX/Bubble Bobble SFX (3).wav", "SFX/Jump.wav", "SFX/The Quest Begins.ogg"};
     char path[BB_PATH_CAP];
-    size_t i;
-    Image image;
-    Wave wave;
-    int size;
-    unsigned char *font;
-
-    for (i = 0; i < sizeof images / sizeof images[0]; ++i) {
+    for (size_t i = 0; i < sizeof images / sizeof images[0]; ++i) {
         if (!path_for(path, directory, images[i].name)) return false;
-        image = LoadImage(path);
+        Image image = LoadImage(path);
         if (!image.data || image.width != images[i].width || image.height != images[i].height) {
             fprintf(stderr, "Missing or invalid asset: %s (expected %dx%d)\n", path, images[i].width, images[i].height);
             if (image.data) UnloadImage(image);
@@ -71,15 +59,15 @@ bool bb_assets_validate(const char *directory, uint8_t *maps)
         }
         UnloadImage(image);
     }
-    for (i = 0; i < sizeof sounds / sizeof sounds[0]; ++i) {
+    for (size_t i = 0; i < sizeof sounds / sizeof sounds[0]; ++i) {
         if (!path_for(path, directory, sounds[i])) return false;
-        wave = LoadWave(path);
+        Wave wave = LoadWave(path);
         if (!IsWaveValid(wave)) { fprintf(stderr, "Invalid sound: %s\n", path); return false; }
         UnloadWave(wave);
     }
     if (!path_for(path, directory, "NES_Font.ttf")) return false;
-    size = 0;
-    font = read_asset(path, &size);
+    int size = 0;
+    unsigned char *font = read_asset(path, &size);
     if (!font || size < 12) { MemFree(font); fprintf(stderr, "Missing font: %s\n", path); return false; }
     MemFree(font);
     if (maps) bb_levels_build(maps);
@@ -89,10 +77,8 @@ bool bb_assets_validate(const char *directory, uint8_t *maps)
 static Texture2D texture(const char *directory, const char *name)
 {
     char path[BB_PATH_CAP];
-    Texture2D result;
-
     if (!path_for(path, directory, name)) return bb_empty_texture();
-    result = LoadTexture(path);
+    Texture2D result = LoadTexture(path);
     if (result.id) SetTextureFilter(result, TEXTURE_FILTER_POINT);
     return result;
 }
@@ -107,7 +93,6 @@ static Sound sound(const char *directory, const char *name)
 bool bb_assets_load(BBAssets *a, const char *directory, bool audio)
 {
     char path[BB_PATH_CAP];
-    int size;
 
     /* 중간에 실패해도 호출자가 bb_assets_unload로 로드된 자원만 정리할 수 있다. */
     memset(a, 0, sizeof *a);
@@ -130,7 +115,7 @@ bool bb_assets_load(BBAssets *a, const char *directory, bool audio)
         a->fire = sound(directory, "SFX/Bubble Bobble SFX (2).wav");
         a->death = sound(directory, "SFX/Bubble Bobble SFX (3).wav");
         a->jump = sound(directory, "SFX/Jump.wav");
-        size = 0;
+        int size = 0;
         if (!path_for(path, directory, "SFX/The Quest Begins.ogg")) return false;
         /* 메모리에서 연 음악 스트림보다 원본 버퍼를 오래 유지한다. */
         a->music_data = read_asset(path, &size);
@@ -145,18 +130,12 @@ bool bb_assets_load(BBAssets *a, const char *directory, bool audio)
 
 void bb_assets_unload(BBAssets *a)
 {
-    Texture2D textures[8];
-    size_t i;
-
-    textures[0] = a->players[0];
-    textures[1] = a->players[1];
-    textures[2] = a->tiles;
-    textures[3] = a->bubble;
-    textures[4] = a->large_bubble;
-    textures[5] = a->logo;
-    textures[6] = a->enemy;
-    textures[7] = a->items;
-    for (i = 0; i < sizeof textures / sizeof textures[0]; ++i) if (textures[i].id) UnloadTexture(textures[i]);
+    Texture2D textures[] = {
+        a->players[0], a->players[1], a->tiles, a->bubble,
+        a->large_bubble, a->logo, a->enemy, a->items
+    };
+    for (size_t i = 0; i < sizeof textures / sizeof textures[0]; ++i)
+        if (textures[i].id) UnloadTexture(textures[i]);
     if (a->font.texture.id && a->font.texture.id != GetFontDefault().texture.id) UnloadFont(a->font);
     if (IsSoundValid(a->fire)) UnloadSound(a->fire);
     if (IsSoundValid(a->jump)) UnloadSound(a->jump);
@@ -187,18 +166,9 @@ static void centered(const BBAssets *a, const char *value, float y, Color color)
 
 static void sprite(Texture2D sheet, int column, int row, int size, float x, float y, bool flip)
 {
-    Rectangle source;
-    Rectangle destination;
-
     /* 게임 좌표는 8픽셀 타일 단위의 중심점이고, 음수 너비는 좌우 반전이다. */
-    source.x = (float)(column * size);
-    source.y = (float)(row * size);
-    source.width = (float)(flip ? -size : size);
-    source.height = (float)size;
-    destination.x = roundf(x * 8 - (float)size / 2);
-    destination.y = roundf(y * 8 - (float)size / 2);
-    destination.width = (float)size;
-    destination.height = (float)size;
+    Rectangle source = {(float)(column * size), (float)(row * size), (float)(flip ? -size : size), (float)size};
+    Rectangle destination = {roundf(x * 8 - (float)size / 2), roundf(y * 8 - (float)size / 2), (float)size, (float)size};
     DrawTexturePro(sheet, source, destination, bb_vector2(0, 0), 0, WHITE);
 }
 
@@ -237,9 +207,7 @@ static void pickup_sprite(const BBAssets *a, const BBPickup *pickup)
         {24, 0}, /* Donut */
         {27, 0}  /* Burger */
     };
-    unsigned int type;
-
-    type = (unsigned int)pickup->type;
+    unsigned int type = (unsigned int)pickup->type;
     if (type >= BB_PICKUP_TYPE_COUNT) return;
     sprite(a->items, cells[type].column, cells[type].row, 16,
            pickup->body.x, pickup->body.y, false);
@@ -277,13 +245,12 @@ static void player_hud(const BBAssets *a, const BBPlayer *player, int index)
 static void leaderboard(const BBAssets *a, const BBUI *ui, float top, size_t maximum)
 {
     size_t limit = ui->score_count < maximum ? ui->score_count : maximum;
-    size_t i;
     char value[24];
     text(a, "NO", 8, top, YELLOW);
     text(a, "NAME", 32, top, YELLOW);
     text(a, "SCORE", 132, top, YELLOW);
     text(a, "ROUND", 196, top, YELLOW);
-    for (i = 0; i < limit; ++i) {
+    for (size_t i = 0; i < limit; ++i) {
         float y = top + 14 + (float)i * 12;
         snprintf(value, sizeof value, "%u", (unsigned)i + 1);
         text(a, value, 8, y, WHITE);
@@ -298,12 +265,10 @@ static void leaderboard(const BBAssets *a, const BBUI *ui, float top, size_t max
 
 static void score_screen(const BBAssets *a, const BBGame *g, const BBUI *ui)
 {
-    int i;
     char label[48];
-    float initial_x;
     if (g->player_count == 0) centered(a, "LEADERBOARD", 16, YELLOW);
     else centered(a, g->won ? "ALL ROUNDS CLEAR!" : "GAME OVER", 16, YELLOW);
-    for (i = 0; i < g->player_count; ++i) {
+    for (int i = 0; i < g->player_count; ++i) {
         snprintf(label, sizeof label, "P%d SCORE %d", i + 1, g->players[i].score < 0 ? 0 : g->players[i].score);
         centered(a, label, 34.0f + (float)i * 12, player_colors[i]);
     }
@@ -311,7 +276,7 @@ static void score_screen(const BBAssets *a, const BBGame *g, const BBUI *ui)
         snprintf(label, sizeof label, "P%d ENTER INITIALS", ui->score_player + 1);
         centered(a, label, 66, player_colors[ui->score_player]);
         centered(a, ui->initials, 80, WHITE);
-        initial_x = floorf((BB_SCREEN_WIDTH - MeasureTextEx(a->font, ui->initials, 8, 0).x) * 0.5f);
+        float initial_x = floorf((BB_SCREEN_WIDTH - MeasureTextEx(a->font, ui->initials, 8, 0).x) * 0.5f);
         DrawRectangle((int)initial_x + ui->initial_cursor * 8, 89, 7, 1, player_colors[ui->score_player]);
         leaderboard(a, ui, 104, 6);
         centered(a, ui->save_failed ? "ENTER RETRY OR ESC CANCEL" : "ARROWS LETTER  ENTER NEXT", 198, GRAY);
@@ -329,14 +294,11 @@ static void score_screen(const BBAssets *a, const BBGame *g, const BBUI *ui)
 static void menu(const BBAssets *a, const BBUI *ui)
 {
     const char *entries[BB_MENU_COUNT] = {"1 PLAYER", "2 PLAYERS", "LEADERBOARD"};
-    int i;
-    Color color;
     DrawTexture(a->logo, (BB_SCREEN_WIDTH - a->logo.width) / 2, 0, WHITE);
-    for (i = 0; i < BB_MENU_COUNT; ++i) {
-        color = GRAY;
+    for (int i = 0; i < BB_MENU_COUNT; ++i) {
+        Color color = GRAY;
         if (i == ui->menu_selection) {
-            color = YELLOW;
-            if (i < 2) color = player_colors[i];
+            color = i < 2 ? player_colors[i] : YELLOW;
             DrawRectangle(68, 119 + i * 13, 4, 4, color);
         }
         text(a, entries[i], 80, (float)(117 + i * 13), color);
@@ -358,38 +320,31 @@ static void menu(const BBAssets *a, const BBUI *ui)
 
 void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
 {
-    int enemy_frame;
-    int i, x, y, frame, column, row;
-    const BBEnemy *enemy;
-    const BBBubble *bubble;
-    const BBPlayer *player;
     char label[32];
 
     ClearBackground(BLACK);
     if (g->state == BB_STATE_MENU) { menu(a, ui); return; }
     if (g->state == BB_STATE_SCORE) { score_screen(a, g, ui); return; }
     if (g->state != BB_STATE_INTRO) {
-        for (y = 0; y < BB_MAP_HEIGHT; ++y)
-            for (x = 0; x < BB_MAP_WIDTH; ++x)
+        for (int y = 0; y < BB_MAP_HEIGHT; ++y)
+            for (int x = 0; x < BB_MAP_WIDTH; ++x)
                 if (g->maps[g->level][y][x])
                     DrawTextureRec(a->tiles, bb_rectangle(0, (float)(g->level * 8), 8, 8),
                                    bb_vector2((float)(x * 8), (float)(y * 8)), WHITE);
     }
-    enemy_frame = (int)(g->level_time * 4) % 2;
-    for (i = 0; i < BB_MAX_ENEMIES; ++i) {
-        enemy = &g->enemies[i];
+    int enemy_frame = (int)(g->level_time * 4) % 2;
+    for (int i = 0; i < BB_MAX_ENEMIES; ++i) {
+        const BBEnemy *enemy = &g->enemies[i];
         if (!enemy->active || enemy->state == BB_ENEMY_CAPTURED) continue;
         if (enemy->state == BB_ENEMY_SPAWNING && enemy->age <= enemy->spawn_delay) continue;
+        int frame = enemy_frame + (enemy->angry ? 2 : 0);
         if (enemy->state == BB_ENEMY_DEAD) frame = 12 + (int)(enemy->age * 4) % 4;
-        else {
-            frame = enemy_frame;
-            if (enemy->angry) frame += 2;
-        }
         sprite(a->enemy, frame, enemy_row(enemy->type), 16, enemy->body.x, enemy->body.y, enemy->facing > 0);
     }
-    for (i = 0; i < BB_MAX_BUBBLES; ++i) {
-        bubble = &g->bubbles[i];
+    for (int i = 0; i < BB_MAX_BUBBLES; ++i) {
+        const BBBubble *bubble = &g->bubbles[i];
         if (!bubble->active) continue;
+        int frame;
         if (bubble->popping) frame = 5 + (int)(fmaxf(0, 0.25f - bubble->pop_timer) * 8) % 2;
         else if (bubble->age < 0.333f) frame = (int)(bubble->age * 12);
         else frame = 3 + (int)(bubble->age * 12) % 2;
@@ -399,19 +354,18 @@ void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
             sprite(a->enemy, 6 + enemy_frame, enemy_row(g->enemies[bubble->captured_enemy].type),
                    16, bubble->body.x, bubble->body.y, false);
     }
-    for (i = 0; i < BB_MAX_PICKUPS; ++i)
+    for (int i = 0; i < BB_MAX_PICKUPS; ++i)
         if (g->pickups[i].active) pickup_sprite(a, &g->pickups[i]);
-    for (i = 0; i < BB_MAX_BOULDERS; ++i)
+    for (int i = 0; i < BB_MAX_BOULDERS; ++i)
         if (g->boulders[i].active)
             sprite(a->enemy, 5 - (int)(g->boulders[i].age * 4) % 6, 2, 16,
                    g->boulders[i].body.x, g->boulders[i].body.y, false);
-    for (i = 0; i < g->player_count; ++i) {
-        player = &g->players[i];
+    for (int i = 0; i < g->player_count; ++i) {
+        const BBPlayer *player = &g->players[i];
         if (!player->active || player->state == BB_PLAYER_OUT) continue;
         if (player->invulnerable > 0 && player->state != BB_PLAYER_DEAD && (int)(g->level_time * 12) % 2) continue;
-        if (fabsf(player->body.vx) > 0.1f) column = (int)(g->level_time * 7) % 4;
-        else column = (int)(g->level_time * 7) % 2;
-        row = 0;
+        int column = (int)(g->level_time * 7) % (fabsf(player->body.vx) > 0.1f ? 4 : 2);
+        int row = 0;
         if (!player->body.grounded) { row = 1; column = 2 + (int)(g->level_time * 4) % 2; }
         if (player->attack_timer > 0) { row = 2; column = 0; }
         if (player->state == BB_PLAYER_DEAD) { row = 3; column = (int)(g->level_time * 10) % 6; }
@@ -422,7 +376,7 @@ void bb_draw_game(const BBAssets *a, const BBGame *g, const BBUI *ui)
     }
     DrawRectangle(0, 0, BB_SCREEN_WIDTH, 24, BLACK);
     DrawRectangle(0, 212, BB_SCREEN_WIDTH, 12, BLACK);
-    for (i = 0; i < g->player_count; ++i)
+    for (int i = 0; i < g->player_count; ++i)
         if (g->players[i].active) player_hud(a, &g->players[i], i);
     snprintf(label, sizeof label, "ROUND %d", g->level + 1);
     centered(a, label, 214, WHITE);

@@ -2,43 +2,26 @@
 
 Vector2 bb_vector2(float x, float y)
 {
-    Vector2 value;
-    value.x = x;
-    value.y = y;
-    return value;
+    return (Vector2){x, y};
 }
 
 Rectangle bb_rectangle(float x, float y, float width, float height)
 {
-    Rectangle value;
-    value.x = x;
-    value.y = y;
-    value.width = width;
-    value.height = height;
-    return value;
+    return (Rectangle){x, y, width, height};
 }
 
 Color bb_color(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
 {
-    Color value;
-    value.r = r;
-    value.g = g;
-    value.b = b;
-    value.a = a;
-    return value;
+    return (Color){r, g, b, a};
 }
 
 Texture2D bb_empty_texture(void)
 {
     /* raylib 구조체의 모든 필드를 초기화해 리소스 유효성 검사에 넘긴다. */
-    Texture2D value;
-    memset(&value, 0, sizeof value);
-    return value;
+    return (Texture2D){0};
 }
 
 Sound bb_empty_sound(void)
 {
-    Sound value;
-    memset(&value, 0, sizeof value);
-    return value;
+    return (Sound){0};
 }

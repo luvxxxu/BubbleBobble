@@ -1,8 +1,6 @@
 #ifndef BB_RAYLIB_TYPES_H
 #define BB_RAYLIB_TYPES_H
 
-#include <string.h>
-
 #include "raylib.h"
 
 /* raylib 값 타입을 생성하는 공통 함수. */

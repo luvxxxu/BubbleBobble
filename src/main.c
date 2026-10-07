@@ -29,9 +29,8 @@ static bool key_pressed(int key)
 static bool positive_number(const char *value, int *out, int maximum)
 {
     char *end;
-    long number;
     errno = 0;
-    number = strtol(value, &end, 10);
+    long number = strtol(value, &end, 10);
     if (errno || end == value || *end || number < 1 || number > maximum) return false;
     *out = (int)number;
     return true;
@@ -42,15 +41,9 @@ static bool pad_pressed(int index, int button)
     return IsGamepadAvailable(index) && IsGamepadButtonPressed(index, button);
 }
 
-static bool pad_down(int index, int button)
-{
-    return IsGamepadAvailable(index) && IsGamepadButtonDown(index, button);
-}
-
 static BBInput player_input(int player, int player_count)
 {
     BBInput input = {0};
-    float stick;
     if (player == 0) {
         input.move = (float)((int)IsKeyDown(KEY_D) - (int)IsKeyDown(KEY_A));
         input.jump = key_pressed(KEY_W) || key_pressed(KEY_SPACE);
@@ -67,9 +60,9 @@ static BBInput player_input(int player, int player_count)
         input.fire = input.fire || key_pressed(KEY_SLASH) || key_pressed(KEY_RIGHT_CONTROL);
     }
     if (IsGamepadAvailable(player)) {
-        stick = GetGamepadAxisMovement(player, GAMEPAD_AXIS_LEFT_X);
+        float stick = GetGamepadAxisMovement(player, GAMEPAD_AXIS_LEFT_X);
         if (fabsf(stick) > 0.2f) input.move += stick;
-        input.move += (float)((int)pad_down(player, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) - (int)pad_down(player, GAMEPAD_BUTTON_LEFT_FACE_LEFT));
+        input.move += (float)((int)IsGamepadButtonDown(player, GAMEPAD_BUTTON_LEFT_FACE_RIGHT) - (int)IsGamepadButtonDown(player, GAMEPAD_BUTTON_LEFT_FACE_LEFT));
         input.jump = input.jump || pad_pressed(player, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT) || pad_pressed(player, GAMEPAD_BUTTON_LEFT_FACE_UP);
         input.fire = input.fire || pad_pressed(player, GAMEPAD_BUTTON_RIGHT_FACE_DOWN);
     }
@@ -81,9 +74,8 @@ static BBInput player_input(int player, int player_count)
 
 static void score_entry_next(BBUI *ui, const BBGame *game)
 {
-    int i;
     ui->entering_initials = false;
-    for (i = 0; i < game->player_count; ++i) {
+    for (int i = 0; i < game->player_count; ++i) {
         if (game->players[i].active && !ui->score_recorded[i]) {
             ui->score_player = i;
             ui->entering_initials = true;
@@ -131,7 +123,6 @@ static void score_submit(BBUI *ui, const BBGame *game, const char *path, bool sm
 
 static void score_input(BBUI *ui, BBGame *game, bool up, bool down, bool confirm, const char *path, bool smoke)
 {
-    char *letter;
     int key;
     if (!ui->entering_initials) {
         if (confirm) bb_game_menu(game);
@@ -139,7 +130,7 @@ static void score_input(BBUI *ui, BBGame *game, bool up, bool down, bool confirm
     }
     if (key_pressed(KEY_LEFT) && ui->initial_cursor > 0) --ui->initial_cursor;
     if (key_pressed(KEY_RIGHT) && ui->initial_cursor < 2) ++ui->initial_cursor;
-    letter = &ui->initials[ui->initial_cursor];
+    char *letter = &ui->initials[ui->initial_cursor];
     if (up) *letter = *letter >= 'Z' ? 'A' : (char)(*letter + 1);
     if (down) *letter = *letter <= 'A' ? 'Z' : (char)(*letter - 1);
     while ((key = GetCharPressed()) != 0) {
@@ -163,21 +154,16 @@ static void usage(const char *program)
 
 static bool save_screenshot(RenderTexture2D canvas, const char *path)
 {
-    Image image;
-    int size;
-    unsigned char *png;
-    FILE *file;
-    bool ok;
-    image = LoadImageFromTexture(canvas.texture);
+    Image image = LoadImageFromTexture(canvas.texture);
     if (!image.data) return false;
     /* 렌더 텍스처의 읽기 방향을 화면과 맞춘 뒤 PNG로 인코딩한다. */
     ImageFlipVertical(&image);
-    size = 0;
-    png = ExportImageToMemory(image, ".png", &size);
+    int size = 0;
+    unsigned char *png = ExportImageToMemory(image, ".png", &size);
     UnloadImage(image);
     if (!png || size <= 0) { MemFree(png); return false; }
-    file = bb_platform_fopen(path, "wb");
-    ok = false;
+    FILE *file = bb_platform_fopen(path, "wb");
+    bool ok = false;
     if (file) {
         ok = fwrite(png, 1, (size_t)size, file) == (size_t)size;
         if (fclose(file) != 0) ok = false;
@@ -190,41 +176,16 @@ static int run_game(int argc, char **argv)
 {
     const char *asset_override = NULL, *screenshot = NULL, *score_override = NULL;
     int smoke_frames = 0;
-    bool validate_only = false, muted = false;
-    int i;
+    bool validate_only = false;
     char asset_directory[BB_PATH_CAP];
     char score_path[BB_PATH_CAP] = {0};
     uint8_t maps[BB_LEVEL_COUNT * BB_MAP_WIDTH * BB_MAP_HEIGHT];
-    BBUI ui = {0};
-    bool audio_ready;
-    BBAssets assets;
-    RenderTexture2D canvas;
-    BBGame game;
-    BBInput pending[BB_MAX_PLAYERS] = {0};
-    double accumulator = 0;
-    int frames = 0;
-    bool screenshot_ok = true;
-    bool confirm;
-    bool up, down;
-    BBState previous_state;
-    bool simulate;
-    bool was_simulating = false;
-    bool focused;
-    bool clear_actions;
-    float elapsed;
-    BBInput input;
-    float scale_x;
-    float scale_y;
-    float scale;
-    float width;
-    float height;
-    bool smoke_ok;
-    ui.selected_players = 1;
-    for (i = 1; i < argc; ++i) {
+    BBUI ui = { .selected_players = 1 };
+    for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--assets") == 0 && i + 1 < argc) asset_override = argv[++i];
         else if (strcmp(argv[i], "--score-file") == 0 && i + 1 < argc) score_override = argv[++i];
         else if (strcmp(argv[i], "--screenshot") == 0 && i + 1 < argc) screenshot = argv[++i];
-        else if (strcmp(argv[i], "--mute") == 0) muted = true;
+        else if (strcmp(argv[i], "--mute") == 0) ui.muted = true;
         else if (strcmp(argv[i], "--validate-assets") == 0) validate_only = true;
         else if (strcmp(argv[i], "--players") == 0 && i + 1 < argc) {
             if (!positive_number(argv[++i], &ui.selected_players, BB_MAX_PLAYERS)) { usage(argv[0]); return EXIT_FAILURE; }
@@ -248,7 +209,6 @@ static int run_game(int argc, char **argv)
         printf("Validated %d playable maps, both players, enemies, items, font, 3 WAV sounds and OGG music.\n", BB_LEVEL_COUNT);
         return EXIT_SUCCESS;
     }
-    ui.muted = muted;
     ui.menu_selection = ui.selected_players - 1;
     if (score_override) {
         if (strlen(score_override) >= sizeof score_path) return EXIT_FAILURE;
@@ -270,9 +230,10 @@ static int run_game(int argc, char **argv)
     SetTargetFPS(60);
     /* 에셋 검증과 그래픽 의존성이 없는 코어 테스트에는 장치가 필요 없다. */
     InitAudioDevice();
-    audio_ready = IsAudioDeviceReady();
+    bool audio_ready = IsAudioDeviceReady();
     if (!audio_ready) fprintf(stderr, "Audio device unavailable; continuing without sound.\n");
-    if (audio_ready) SetMasterVolume(muted ? 0.0f : 1.0f);
+    if (audio_ready) SetMasterVolume(ui.muted ? 0.0f : 1.0f);
+    BBAssets assets;
     if (!bb_assets_load(&assets, asset_directory, audio_ready)) {
         fprintf(stderr, "Could not load game resources.\n");
         bb_assets_unload(&assets);
@@ -280,7 +241,7 @@ static int run_game(int argc, char **argv)
         CloseWindow();
         return EXIT_FAILURE;
     }
-    canvas = LoadRenderTexture(BB_SCREEN_WIDTH, BB_SCREEN_HEIGHT);
+    RenderTexture2D canvas = LoadRenderTexture(BB_SCREEN_WIDTH, BB_SCREEN_HEIGHT);
     if (!IsRenderTextureValid(canvas)) {
         bb_assets_unload(&assets);
         if (audio_ready) CloseAudioDevice();
@@ -288,19 +249,24 @@ static int run_game(int argc, char **argv)
         return EXIT_FAILURE;
     }
     SetTextureFilter(canvas.texture, TEXTURE_FILTER_POINT);
+    BBGame game;
     bb_game_init(&game, maps, 0xBB1986u);
     if (smoke_frames) { bb_game_start(&game, ui.selected_players); bb_game_skip_intro(&game); }
+    BBInput pending[BB_MAX_PLAYERS] = {0};
+    double accumulator = 0;
+    int frames = 0;
+    bool screenshot_ok = true, was_simulating = false;
     while (!WindowShouldClose()) {
         poll_key_edges();
-        previous_state = game.state;
-        focused = IsWindowFocused() || smoke_frames > 0;
-        clear_actions = false;
-        confirm = focused && (key_pressed(KEY_ENTER) || pad_pressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN) ||
-                              pad_pressed(1, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
-        up = focused && (key_pressed(KEY_UP) || key_pressed(KEY_W) ||
-                         pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP) || pad_pressed(1, GAMEPAD_BUTTON_LEFT_FACE_UP));
-        down = focused && (key_pressed(KEY_DOWN) || key_pressed(KEY_S) ||
-                           pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN) || pad_pressed(1, GAMEPAD_BUTTON_LEFT_FACE_DOWN));
+        BBState previous_state = game.state;
+        bool focused = IsWindowFocused() || smoke_frames > 0;
+        bool clear_actions = false;
+        bool confirm = focused && (key_pressed(KEY_ENTER) || pad_pressed(0, GAMEPAD_BUTTON_RIGHT_FACE_DOWN) ||
+                                   pad_pressed(1, GAMEPAD_BUTTON_RIGHT_FACE_DOWN));
+        bool up = focused && (key_pressed(KEY_UP) || key_pressed(KEY_W) ||
+                              pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_UP) || pad_pressed(1, GAMEPAD_BUTTON_LEFT_FACE_UP));
+        bool down = focused && (key_pressed(KEY_DOWN) || key_pressed(KEY_S) ||
+                                pad_pressed(0, GAMEPAD_BUTTON_LEFT_FACE_DOWN) || pad_pressed(1, GAMEPAD_BUTTON_LEFT_FACE_DOWN));
         if (focused && key_pressed(KEY_F11)) ToggleFullscreen();
         if (focused && key_pressed(KEY_M)) { ui.muted = !ui.muted; if (audio_ready) SetMasterVolume(ui.muted ? 0.0f : 1.0f); }
         if (focused && key_pressed(KEY_ESCAPE)) {
@@ -342,20 +308,19 @@ static int run_game(int argc, char **argv)
             }
         }
         if (assets.audio) UpdateMusicStream(assets.music);
-        simulate = !ui.paused && focused && game.state != BB_STATE_MENU && game.state != BB_STATE_SCORE;
+        bool simulate = !ui.paused && focused && game.state != BB_STATE_MENU && game.state != BB_STATE_SCORE;
         if (simulate) {
             /* 가변 렌더 프레임을 120Hz 고정 시뮬레이션 단계로 누적한다. */
-            elapsed = smoke_frames ? 1.0f / 60.0f : GetFrameTime();
+            float elapsed = smoke_frames ? 1.0f / 60.0f : GetFrameTime();
             if (elapsed > 0.25f) elapsed = 0.25f;
             accumulator += elapsed;
             if (clear_actions || !was_simulating) memset(pending, 0, sizeof pending);
-            for (i = 0; i < game.player_count; ++i) {
-                input = player_input(i, game.player_count);
+            for (int i = 0; i < game.player_count; ++i) {
+                BBInput input = player_input(i, game.player_count);
                 pending[i].move = input.move;
                 /* 시작/재개 버튼이 발사로 이어지지 않게 전환 프레임의 동작을 비운다. */
                 if (clear_actions || !was_simulating || (game.state != BB_STATE_PLAY && game.state != BB_STATE_CLEAR)) {
-                    pending[i].jump = false;
-                    pending[i].fire = false;
+                    pending[i].jump = pending[i].fire = false;
                 } else {
                     /* 짧게 눌렀다 뗀 동작도 다음 고정 단계까지 보존한다. */
                     pending[i].jump = pending[i].jump || input.jump;
@@ -375,10 +340,7 @@ static int run_game(int argc, char **argv)
                 }
                 bb_game_update(&game, pending, BB_FIXED_DT);
                 bb_audio_events(&assets, game.events);
-                for (i = 0; i < game.player_count; ++i) {
-                    pending[i].jump = false;
-                    pending[i].fire = false;
-                }
+                for (int i = 0; i < game.player_count; ++i) pending[i].jump = pending[i].fire = false;
                 accumulator -= BB_FIXED_DT;
                 if (game.state == BB_STATE_SCORE) { accumulator = 0; break; }
             }
@@ -390,12 +352,9 @@ static int run_game(int argc, char **argv)
         bb_draw_game(&assets, &game, &ui);
         EndTextureMode();
         /* 256x224 화면을 가능한 한 정수 배율로 중앙에 확대해 픽셀 경계를 유지한다. */
-        scale_x = (float)GetScreenWidth() / BB_SCREEN_WIDTH;
-        scale_y = (float)GetScreenHeight() / BB_SCREEN_HEIGHT;
-        scale = fminf(scale_x, scale_y);
+        float scale = fminf((float)GetScreenWidth() / BB_SCREEN_WIDTH, (float)GetScreenHeight() / BB_SCREEN_HEIGHT);
         if (scale >= 1) scale = floorf(scale);
-        width = BB_SCREEN_WIDTH * scale;
-        height = BB_SCREEN_HEIGHT * scale;
+        float width = BB_SCREEN_WIDTH * scale, height = BB_SCREEN_HEIGHT * scale;
         BeginDrawing();
         ClearBackground(bb_color(12, 12, 12, 255));
         /* raylib 렌더 텍스처는 표시할 때 세로 방향을 뒤집어야 한다. */
@@ -404,18 +363,15 @@ static int run_game(int argc, char **argv)
                        bb_vector2(0, 0), 0, WHITE);
         EndDrawing();
         ++frames;
-        if (smoke_frames && frames >= smoke_frames) {
-            if (screenshot) screenshot_ok = save_screenshot(canvas, screenshot);
-            break;
-        }
-        if (!smoke_frames && screenshot && frames == 1) screenshot_ok = save_screenshot(canvas, screenshot);
+        if (screenshot && frames == (smoke_frames ? smoke_frames : 1)) screenshot_ok = save_screenshot(canvas, screenshot);
+        if (smoke_frames && frames >= smoke_frames) break;
     }
-    smoke_ok = !smoke_frames || frames >= smoke_frames;
+    bool smoke_ok = !smoke_frames || frames >= smoke_frames;
     if (smoke_frames) {
         printf("Smoke %s: frames=%d ticks=%" PRIu64 " level=%d enemies=%d state=%d players=%d\n",
                smoke_ok ? "completed" : "interrupted", frames, game.ticks, game.level + 1,
                bb_game_enemies_left(&game), (int)game.state, game.player_count);
-        for (i = 0; i < game.player_count; ++i)
+        for (int i = 0; i < game.player_count; ++i)
             printf("P%d: active=%d x=%.3f y=%.3f mana=%.3f boosting=%d lives=%d score=%d\n", i + 1,
                    (int)game.players[i].active, game.players[i].body.x, game.players[i].body.y,
                    game.players[i].energy, (int)game.players[i].boosting,
@@ -432,12 +388,11 @@ static int run_game(int argc, char **argv)
 int main(int argc, char **argv)
 {
     BBArguments arguments;
-    int result;
     if (!bb_platform_arguments(argc, argv, &arguments)) {
         fprintf(stderr, "Cannot decode command-line arguments.\n");
         return EXIT_FAILURE;
     }
-    result = run_game(arguments.count, arguments.values);
+    int result = run_game(arguments.count, arguments.values);
     bb_platform_free_arguments(&arguments);
     return result;
 }
