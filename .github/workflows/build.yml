@@ -1,10 +1,12 @@
 name: C11 builds and gameplay tests
 
+# 푸시·PR·수동 실행에서 같은 검증을 수행해 로컬 환경에만 의존하지 않는다.
 on:
   push:
   pull_request:
   workflow_dispatch:
 
+# 저장소를 내려받는 읽기 권한만 필요하며 CI가 소스나 릴리스를 수정하지 않는다.
 permissions:
   contents: read
 
@@ -12,9 +14,11 @@ jobs:
   # 배포 대상별로 같은 빌드·테스트·에셋 설치 과정을 수행한다.
   desktop:
     strategy:
+      # 한 플랫폼이 실패해도 다른 플랫폼 결과까지 수집해 영향 범위를 확인한다.
       fail-fast: false
       matrix:
         include:
+          # 실제 MSVC 환경에서 32비트·64비트를 각각 만들고 macOS arm64도 별도로 검사한다.
           - os: windows-2025-vs2026
             preset: windows-x86
           - os: windows-2025-vs2026
@@ -24,14 +28,17 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      # Visual Studio 2026 생성기를 이해하는 CMake인지 구성 전에 명확히 검사한다.
       - name: Verify CMake supports Visual Studio 2026
         if: startsWith(matrix.os, 'windows-')
         shell: pwsh
         run: |
+          # CMake가 제공하는 JSON을 파싱해 문자열 비교 대신 major/minor 숫자를 비교한다.
           $version = (cmake -E capabilities | ConvertFrom-Json).version
           if ($version.major -lt 4 -or ($version.major -eq 4 -and $version.minor -lt 2)) {
             throw "Visual Studio 2026 requires CMake 4.2 or newer; found $($version.string)"
           }
+      # 구성 → 빌드 → 테스트 → 설치 순서를 지켜 실패한 산출물이 배포되지 않게 한다.
       - name: Configure C-only desktop build
         run: cmake --preset ${{ matrix.preset }}
       - name: Build
@@ -40,9 +47,11 @@ jobs:
         run: ctest --preset ${{ matrix.preset }}
       - name: Package executable and assets
         run: cmake --install build/${{ matrix.preset }} --config Release --prefix build/package/${{ matrix.preset }}
+      # 빌드 폴더가 아닌 설치된 실행 파일을 실행해 에셋 복사와 상대 경로도 확인한다.
       - name: Validate installed executable and assets
         shell: bash
         run: ./build/package/${{ matrix.preset }}/bin/BubbleBobble --validate-assets
+      # 모든 검사에 성공한 패키지만 다운로드 가능한 CI 산출물로 보관한다.
       - uses: actions/upload-artifact@v4
         with:
           name: BubbleBobble-${{ matrix.preset }}
@@ -54,7 +63,9 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
+        # 두 컴파일러로 동일한 C11 핵심부를 검사해 특정 컴파일러 확장 의존을 찾는다.
         cc: [gcc, clang]
+    # CMake 첫 구성에서 사용할 C 컴파일러를 행렬 값으로 지정한다.
     env:
       CC: ${{ matrix.cc }}
     steps:

@@ -138,6 +138,8 @@ typedef struct BBGame {
     int player_count; /* 1인 또는 2인. 배열 번호는 각각 0과 1이다. */
     BBState state;
     float state_time, level_time;
+    float platform_offset, platform_step;
+    int platform_direction;
     uint64_t ticks;
     uint32_t rng;
     BBEvents events;
