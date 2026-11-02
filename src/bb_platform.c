@@ -1,6 +1,8 @@
 /* 그래픽이나 게임 규칙과 분리된 운영체제별 파일·경로·점수 저장 기능이다.
  * 이 파일 밖에서는 경로를 UTF-8로 다루고, Windows API 호출 직전에만 UTF-16으로 바꾼다.
- * Linux의 readlink 등 POSIX.1-2008 선언을 쓰기 위해 시스템 헤더보다 먼저 매크로를 둔다. */
+ * Linux의 readlink 등 POSIX.1-2008 선언을 쓰기 위해 시스템 헤더보다 먼저 매크로를 둔다.
+ * #if는 실행 중의 조건문이 아니라 컴파일할 운영체제에 맞는 코드를 고르는 문법이다.
+ * 함수 인수의 out/count는 결과를 돌려줄 변수의 주소이며, *count는 그 변수의 값이다. */
 #if !defined(_WIN32) && !defined(__APPLE__)
 #define _POSIX_C_SOURCE 200809L
 #endif
@@ -48,7 +50,9 @@ static bool to_wide(const char *path, wchar_t out[BB_PATH_CAP])
  * 크기 인수는 int이므로 size_t 값을 줄여 넣기 전에 표현 가능한 범위를 검사한다. */
 static bool from_wide(const wchar_t *path, char *out, size_t capacity)
 {
-    if (capacity > INT_MAX) return false;
+    if (capacity > INT_MAX) {
+        return false;
+    }
     return WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1,
                               out, (int)capacity, NULL, NULL) > 0;
 }
@@ -59,11 +63,17 @@ static bool from_wide(const wchar_t *path, char *out, size_t capacity)
  * 성공한 FILE 포인터의 fclose 책임은 이 함수를 호출한 쪽에 있다. */
 FILE *bb_platform_fopen(const char *path, const char *mode)
 {
-    if (!path || !path[0] || !mode || !mode[0]) { errno = EINVAL; return NULL; }
+    if (!path || !path[0] || !mode || !mode[0]) {
+        errno = EINVAL;
+        return NULL;
+    }
 #if defined(_WIN32)
     /* 경로뿐 아니라 열기 모드도 넓은 문자열이어야 _wfopen에 전달할 수 있다. */
     wchar_t wide_path[BB_PATH_CAP], wide_mode[BB_PATH_CAP];
-    if (!to_wide(path, wide_path) || !to_wide(mode, wide_mode)) { errno = EINVAL; return NULL; }
+    if (!to_wide(path, wide_path) || !to_wide(mode, wide_mode)) {
+        errno = EINVAL;
+        return NULL;
+    }
     return _wfopen(wide_path, wide_mode);
 #else
     return fopen(path, mode);
@@ -74,7 +84,9 @@ FILE *bb_platform_fopen(const char *path, const char *mode)
  * 받으며, 파일이 없거나 삭제 권한이 없을 때는 false를 반환한다. */
 bool bb_platform_remove(const char *path)
 {
-    if (!path || !path[0]) return false;
+    if (!path || !path[0]) {
+        return false;
+    }
 #if defined(_WIN32)
     {
         wchar_t wide_path[BB_PATH_CAP];
@@ -93,7 +105,9 @@ void bb_platform_free_arguments(BBArguments *arguments)
 
     if (arguments->owned && arguments->values) {
         /* 변환 도중 실패해 비어 있는 칸은 NULL이며 free(NULL)은 안전하다. */
-        for (i = 0; i < arguments->count; ++i) free(arguments->values[i]);
+        for (i = 0; i < arguments->count; ++i) {
+            free(arguments->values[i]);
+        }
         free(arguments->values);
     }
     memset(arguments, 0, sizeof *arguments);
@@ -119,26 +133,40 @@ bool bb_platform_arguments(int argc, char **argv, BBArguments *out)
 #if defined(_WIN32)
     count = 0;
     wide = CommandLineToArgvW(GetCommandLineW(), &count);
-    if (!wide) return false;
+    if (!wide) {
+        return false;
+    }
     /* 끝의 NULL 한 칸을 포함해 0으로 초기화한다. 부분 실패 시에도 어떤 문자열이
      * 할당되었는지 별도 배열 없이 안전하게 정리할 수 있다. */
     out->values = calloc((size_t)count + 1, sizeof *out->values);
     out->count = count;
     out->owned = true;
-    if (!out->values) { LocalFree(wide); return false; }
+    if (!out->values) {
+        LocalFree(wide);
+        return false;
+    }
     ok = true;
     for (i = 0; i < count; ++i) {
         /* 출력 버퍼 없이 먼저 필요한 바이트 수를 묻는다. 종료 문자를 포함한
          * 실제 크기만 할당하고, 지나치게 긴 인수는 게임의 경로 한도에 맞춰 거부한다. */
         size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide[i], -1, NULL, 0, NULL, NULL);
-        if (size <= 0 || size > BB_PATH_CAP) { ok = false; break; }
+        if (size <= 0 || size > BB_PATH_CAP) {
+            ok = false;
+            break;
+        }
         out->values[i] = malloc((size_t)size);
-        if (!out->values[i] || !from_wide(wide[i], out->values[i], (size_t)size)) { ok = false; break; }
+        if (!out->values[i] || !from_wide(wide[i], out->values[i], (size_t)size)) {
+            ok = false;
+            break;
+        }
     }
     /* CommandLineToArgvW의 메모리는 malloc 계열이 아니므로 LocalFree로 돌려준다.
      * UTF-8 복사본을 만들다 실패했다면 이미 만든 복사본도 함께 해제한다. */
     LocalFree(wide);
-    if (!ok) { bb_platform_free_arguments(out); return false; }
+    if (!ok) {
+        bb_platform_free_arguments(out);
+        return false;
+    }
 #endif
     return true;
 }
@@ -158,19 +186,25 @@ bool bb_platform_asset_dir(char *out, size_t capacity)
 
     /* n이 버퍼 크기 이상이면 경로가 잘린 것이므로 UTF-8로 변환하지 않는다. */
     n = GetModuleFileNameW(NULL, wide_path, BB_PATH_CAP);
-    if (n == 0 || n >= BB_PATH_CAP || !from_wide(wide_path, executable, sizeof executable)) return false;
+    if (n == 0 || n >= BB_PATH_CAP || !from_wide(wide_path, executable, sizeof executable)) {
+        return false;
+    }
 #elif defined(__APPLE__)
     uint32_t n;
 
     /* macOS API는 필요한 버퍼 크기를 n에 돌려준다. 고정 버퍼에 담지 못하면 실패한다. */
     n = (uint32_t)sizeof executable;
-    if (_NSGetExecutablePath(executable, &n) != 0) return false;
+    if (_NSGetExecutablePath(executable, &n) != 0) {
+        return false;
+    }
 #else
     ssize_t n;
 
     /* readlink는 문자열 종료 문자를 붙이지 않는다. 한 바이트를 남겨 두고 직접 닫는다. */
     n = readlink("/proc/self/exe", executable, sizeof executable - 1);
-    if (n < 0 || (size_t)n >= sizeof executable - 1) return false;
+    if (n < 0 || (size_t)n >= sizeof executable - 1) {
+        return false;
+    }
     executable[n] = '\0';
 #endif
     /* 마지막 구분자 뒤의 실행 파일명만 제거한다. Windows는 두 종류의 구분자 중
@@ -178,9 +212,13 @@ bool bb_platform_asset_dir(char *out, size_t capacity)
     separator = strrchr(executable, '/');
 #if defined(_WIN32)
     backslash = strrchr(executable, '\\');
-    if (backslash && (!separator || backslash > separator)) separator = backslash;
+    if (backslash && (!separator || backslash > separator)) {
+        separator = backslash;
+    }
 #endif
-    if (!separator) return false;
+    if (!separator) {
+        return false;
+    }
     *separator = '\0';
     return bb_path_join(out, capacity, executable, "assets");
 }
@@ -192,15 +230,23 @@ static bool make_directory(const char *path)
 #if defined(_WIN32)
     wchar_t wide_path[BB_PATH_CAP];
     DWORD attributes;
-    if (!to_wide(path, wide_path)) return false;
-    if (_wmkdir(wide_path) == 0) return true;
-    if (errno != EEXIST) return false;
+    if (!to_wide(path, wide_path)) {
+        return false;
+    }
+    if (_wmkdir(wide_path) == 0) {
+        return true;
+    }
+    if (errno != EEXIST) {
+        return false;
+    }
     attributes = GetFileAttributesW(wide_path);
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 #else
     struct stat info;
     /* Unix에서는 새 디렉터리를 소유자만 읽고 쓰고 탐색할 수 있도록 만든다. */
-    if (mkdir(path, 0700) == 0) return true;
+    if (mkdir(path, 0700) == 0) {
+        return true;
+    }
     return errno == EEXIST && stat(path, &info) == 0 && S_ISDIR(info.st_mode);
 #endif
 }
@@ -218,27 +264,41 @@ bool bb_platform_score_path(char *out, size_t capacity)
     const char *home_dir;
     size_t length;
 #endif
-    if (!out || capacity == 0) return false;
+    if (!out || capacity == 0) {
+        return false;
+    }
     out[0] = '\0';
     /* 작업 폴더나 앱 번들이 아닌 사용자별 데이터 폴더에 저장한다. */
 #if defined(_WIN32)
     /* Windows는 LOCALAPPDATA 원본 유니코드 값을 읽어 사용자 이름의 문자를 보존한다. */
     n = GetEnvironmentVariableW(L"LOCALAPPDATA", wide_parent, BB_PATH_CAP);
-    if (n == 0 || n >= BB_PATH_CAP || !from_wide(wide_parent, parent, sizeof parent)) return false;
+    if (n == 0 || n >= BB_PATH_CAP || !from_wide(wide_parent, parent, sizeof parent)) {
+        return false;
+    }
 #else
     /* Unix 계열의 HOME은 읽기만 한다. 환경 변수 메모리를 수정하지 않고 복사한다. */
     home_dir = getenv("HOME");
-    if (!home_dir || !home_dir[0]) return false;
+    if (!home_dir || !home_dir[0]) {
+        return false;
+    }
     length = strlen(home_dir);
-    if (length >= sizeof parent) return false;
+    if (length >= sizeof parent) {
+        return false;
+    }
     memcpy(parent, home_dir, length + 1);
 #if defined(__APPLE__)
     /* macOS 저장 관례에 따라 Library/Application Support를 한 단계씩 준비한다. */
-    if (!bb_path_join(directory, sizeof directory, parent, "Library") || !make_directory(directory)) return false;
-    if (!bb_path_join(parent, sizeof parent, directory, "Application Support") || !make_directory(parent)) return false;
+    if (!bb_path_join(directory, sizeof directory, parent, "Library") || !make_directory(directory)) {
+        return false;
+    }
+    if (!bb_path_join(parent, sizeof parent, directory, "Application Support") || !make_directory(parent)) {
+        return false;
+    }
 #endif
 #endif
-    if (!bb_path_join(directory, sizeof directory, parent, "BubbleBobble-C11") || !make_directory(directory)) return false;
+    if (!bb_path_join(directory, sizeof directory, parent, "BubbleBobble-C11") || !make_directory(directory)) {
+        return false;
+    }
     return bb_path_join(out, capacity, directory, "Scores.txt");
 }
 
@@ -247,11 +307,19 @@ bool bb_platform_score_path(char *out, size_t capacity)
 static bool valid_score(BbScore score)
 {
     int i;
-    if (score.round < 1 || score.round > BB_SCORE_MAX_ROUND || score.name[3] != '\0') return false;
+    if (score.round < 1 || score.round > BB_SCORE_MAX_ROUND || score.name[3] != '\0') {
+        return false;
+    }
     /* UI에서 선택할 수 있는 대문자·숫자·마침표만 허용해 파일 형식도 단순하게 유지한다. */
-    for (i = 0; i < 3; ++i)
-        if (!((score.name[i] >= 'A' && score.name[i] <= 'Z') ||
-              (score.name[i] >= '0' && score.name[i] <= '9') || score.name[i] == '.')) return false;
+    for (i = 0; i < 3; ++i) {
+        char letter = score.name[i];
+        bool uppercase = letter >= 'A' && letter <= 'Z';
+        bool digit = letter >= '0' && letter <= '9';
+        bool dot = letter == '.';
+        if (!uppercase && !digit && !dot) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -261,19 +329,37 @@ static bool valid_score(BbScore score)
 void bb_scores_insert(BbScore scores[BB_SCORE_COUNT], size_t *count, BbScore score)
 {
     size_t length, position, i;
-    if (!scores || !count || !valid_score(score)) return;
+    if (!scores || !count || !valid_score(score)) {
+        return;
+    }
     /* 호출자가 준 개수가 커도 실제 배열 용량까지만 접근한다. */
-    length = *count < BB_SCORE_COUNT ? *count : BB_SCORE_COUNT;
+    length = *count;
+    if (length > BB_SCORE_COUNT) {
+        length = BB_SCORE_COUNT;
+    }
     *count = length;
     position = 0;
     /* 현재 기록보다 앞설 기존 항목을 건너뛰어 삽입 위치를 찾는다. */
-    while (position < length && (scores[position].score > score.score ||
-           (scores[position].score == score.score && scores[position].round >= score.round))) ++position;
-    if (position >= BB_SCORE_COUNT) return;
-    if (length < BB_SCORE_COUNT) ++length;
+    while (position < length) {
+        bool higher_score = scores[position].score > score.score;
+        bool same_score = scores[position].score == score.score;
+        bool higher_or_same_round = scores[position].round >= score.round;
+        if (!higher_score && !(same_score && higher_or_same_round)) {
+            break;
+        }
+        ++position;
+    }
+    if (position >= BB_SCORE_COUNT) {
+        return;
+    }
+    if (length < BB_SCORE_COUNT) {
+        ++length;
+    }
     /* 뒤쪽부터 한 칸씩 옮겨 아직 복사하지 않은 기록을 덮어쓰지 않는다.
      * 표가 이미 가득 찼다면 마지막 기록이 자연스럽게 빠진다. */
-    for (i = length - 1; i > position; --i) scores[i] = scores[i - 1];
+    for (i = length - 1; i > position; --i) {
+        scores[i] = scores[i - 1];
+    }
     scores[position] = score;
     *count = length;
 }
@@ -286,20 +372,30 @@ static bool parse_score(const char *line, BbScore *record)
     char *end;
     const char *cursor = line;
     unsigned long score, round;
-    if (*cursor < '0' || *cursor > '9') return false;
+    if (*cursor < '0' || *cursor > '9') {
+        return false;
+    }
     /* 이전 함수의 errno를 지운 뒤 변환해야 이번 숫자에서 생긴 범위 오류를 구분한다. */
     errno = 0;
     score = strtoul(cursor, &end, 10);
-    if (errno || score > UINT_MAX || *end != ' ') return false;
+    if (errno || score > UINT_MAX || *end != ' ') {
+        return false;
+    }
     /* 점수 다음에는 정확히 공백 하나와 라운드 숫자가 이어져야 한다. */
     cursor = end + 1;
-    if (*cursor < '0' || *cursor > '9') return false;
+    if (*cursor < '0' || *cursor > '9') {
+        return false;
+    }
     errno = 0;
     round = strtoul(cursor, &end, 10);
-    if (errno || round < 1 || round > BB_SCORE_MAX_ROUND || *end != ' ') return false;
+    if (errno || round < 1 || round > BB_SCORE_MAX_ROUND || *end != ' ') {
+        return false;
+    }
     cursor = end + 1;
     /* 남은 문자열 전체가 세 글자여야 하므로 뒤의 불필요한 토큰도 함께 거부한다. */
-    if (strlen(cursor) != 3) return false;
+    if (strlen(cursor) != 3) {
+        return false;
+    }
     record->score = (unsigned)score;
     record->round = (int)round;
     memcpy(record->name, cursor, sizeof record->name);
@@ -319,39 +415,66 @@ bool bb_scores_load(const char *path, BbScore scores[BB_SCORE_COUNT], size_t *ou
     size_t count = 0, length = 0, consumed = 0;
     int next, lines = 0;
     bool bad_line = false, ok = true;
-    if (!out_count) return false;
+    if (!out_count) {
+        return false;
+    }
     *out_count = 0;
-    if (!path || !path[0] || !scores) return false;
+    if (!path || !path[0] || !scores) {
+        return false;
+    }
     file = bb_platform_fopen(path, "rb");
-    if (!file) return errno == ENOENT;
+    if (!file) {
+        return errno == ENOENT;
+    }
     /* 한 글자씩 읽어 긴 행과 NUL 문자를 확실히 거부한다.
      * 최대 512행, 64 KiB만 읽어 손상된 파일에도 실행 시간이 제한된다. */
     while (ok) {
         next = fgetc(file);
-        if (next != EOF && ++consumed > 65536) { ok = false; break; }
+        if (next != EOF) {
+            ++consumed;
+            if (consumed > 65536) {
+                ok = false;
+                break;
+            }
+        }
         /* 줄바꿈 또는 파일 끝에서 한 줄을 완성한다. 마지막 줄에 개행이 없어도
          * 읽어야 하며, 파일 끝 자체를 빈 기록 하나로 세지는 않는다. */
         if (next == '\n' || next == EOF) {
             if (next == '\n' || length > 0 || bad_line) {
-                if (++lines > 512) { ok = false; break; }
+                ++lines;
+                if (lines > 512) {
+                    ok = false;
+                    break;
+                }
                 /* Windows의 CRLF에서 CR을 제거한 뒤, 플랫폼에 관계없이 같은 형식으로 읽는다. */
-                if (length > 0 && line[length - 1] == '\r') --length;
+                if (length > 0 && line[length - 1] == '\r') {
+                    --length;
+                }
                 line[length] = '\0';
-                if (!bad_line && parse_score(line, &record)) bb_scores_insert(loaded, &count, record);
+                if (!bad_line && parse_score(line, &record)) {
+                    bb_scores_insert(loaded, &count, record);
+                }
             }
-            if (next == EOF) break;
+            if (next == EOF) {
+                break;
+            }
             length = 0;
             bad_line = false;
         /* 중간 NUL이나 버퍼보다 긴 행은 끝까지 소비하되 그 행 전체를 버린다. */
         } else if (next == 0 || length >= sizeof line - 1) {
             bad_line = true;
         } else {
-            line[length++] = (char)next;
+            line[length] = (char)next;
+            ++length;
         }
     }
     /* EOF와 읽기 오류를 구분하고 파일 닫기 실패도 호출자에게 전달한다. */
-    if (ferror(file)) ok = false;
-    if (fclose(file) != 0) ok = false;
+    if (ferror(file)) {
+        ok = false;
+    }
+    if (fclose(file) != 0) {
+        ok = false;
+    }
     if (ok) {
         memcpy(scores, loaded, sizeof loaded);
         *out_count = count;
@@ -372,34 +495,61 @@ bool bb_scores_save(const char *path, const BbScore *scores, size_t count)
 #if defined(_WIN32)
     wchar_t wide_temp[BB_PATH_CAP], wide_path[BB_PATH_CAP];
 #endif
-    if (!path || !path[0] || count > BB_SCORE_COUNT || (count > 0 && !scores)) return false;
+    if (!path || !path[0] || count > BB_SCORE_COUNT || (count > 0 && !scores)) {
+        return false;
+    }
     /* 잘못된 기록은 파일 생성 전에 거부해 기존 저장 파일을 건드리지 않는다. */
-    for (i = 0; i < count; ++i)
-        if (!valid_score(scores[i])) return false;
+    for (i = 0; i < count; ++i) {
+        if (!valid_score(scores[i])) {
+            return false;
+        }
+    }
     /* x 모드는 이미 있는 파일을 덮어쓰지 않는다. 다른 실행 중인 게임이나
      * 이전 실행의 임시 파일을 만나면 다음 번호를 사용한다. */
     for (attempt = 0; attempt < 32; ++attempt) {
         n = snprintf(temporary, sizeof temporary, "%s.tmp.%d", path, attempt);
-        if (n < 0 || (size_t)n >= sizeof temporary) return false;
+        if (n < 0 || (size_t)n >= sizeof temporary) {
+            return false;
+        }
         file = bb_platform_fopen(temporary, "wbx");
-        if (file) break;
-        if (errno != EEXIST) return false;
+        if (file) {
+            break;
+        }
+        if (errno != EEXIST) {
+            return false;
+        }
     }
     /* 후보 32개가 모두 사용 중이면 제한 없이 반복하지 않고 실패로 반환한다. */
-    if (!file) return false;
-    for (i = 0; i < count; ++i)
-        if (fprintf(file, "%u %d %.3s\n", scores[i].score, scores[i].round, scores[i].name) < 0) ok = false;
+    if (!file) {
+        return false;
+    }
+    for (i = 0; i < count; ++i) {
+        int written = fprintf(file, "%u %d %.3s\n", scores[i].score, scores[i].round, scores[i].name);
+        if (written < 0) {
+            ok = false;
+        }
+    }
     /* 버퍼에 남은 출력은 fclose 때 기록되므로 닫기 결과까지 확인한 후 교체한다. */
-    if (fclose(file) != 0) ok = false;
+    if (fclose(file) != 0) {
+        ok = false;
+    }
 #if defined(_WIN32)
     /* Windows는 기존 파일 교체를 허용하고, 디스크 쓰기 완료를 기다리는 옵션을 쓴다. */
-    if (ok) ok = to_wide(temporary, wide_temp) && to_wide(path, wide_path);
-    if (ok) ok = MoveFileExW(wide_temp, wide_path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    if (ok) {
+        ok = to_wide(temporary, wide_temp) && to_wide(path, wide_path);
+    }
+    if (ok) {
+        ok = MoveFileExW(wide_temp, wide_path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
+    }
 #else
     /* 임시 파일을 원본과 같은 디렉터리에 두어 같은 파일시스템 안에서 이름을 바꾼다. */
-    if (ok) ok = rename(temporary, path) == 0;
+    if (ok) {
+        ok = rename(temporary, path) == 0;
+    }
 #endif
     /* 실패한 임시 파일만 지운다. 교체 전 실패했다면 기존 점수 파일은 그대로 남는다. */
-    if (!ok) bb_platform_remove(temporary);
+    if (!ok) {
+        bb_platform_remove(temporary);
+    }
     return ok;
 }

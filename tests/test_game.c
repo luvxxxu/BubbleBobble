@@ -1,4 +1,9 @@
+/* 게임 규칙의 자동 검사 모음이다. 창이나 키보드 대신 BBInput 값을 직접 주고
+ * bb_game_update를 호출한다. fixture로 출발 상황을 만든 뒤, 시간을 진행하고,
+ * CHECK로 기대한 위치·목숨·점수·상태가 맞는지 확인하는 순서로 읽으면 된다.
+ * 시험 중 직접 바꾸는 위치와 타이머는 특정 경계 상황을 빨리 재현하기 위한 값이다. */
 #include "bb_game.h"
+#include "bb_levels.h"
 
 #include <limits.h>
 #include <math.h>
@@ -72,6 +77,16 @@ static void fixture(BBGame *game)
     fixture_mode(game, 1);
 }
 
+/* 시험용 맵에 발판을 추가한 뒤 실제 라운드 진입 경로로 발판 정보를 다시 만든다.
+ * 초기 위치로 돌아간 플레이어는 고정 바닥에 착지시켜 기존 물리 시험과 조건을 맞춘다. */
+static void restart_physics_fixture(BBGame *game)
+{
+    bb_game_start(game, game->player_count);
+    bb_game_skip_intro(game);
+    isolate_physics(game);
+    wait_ticks(game, 30);
+}
+
 /* 버블 배열의 사용 중인 슬롯을 센다. 터지는 연출 중에도 active가 참이므로
  * 연출 종료와 실제 슬롯 반환을 구분하여 검사할 수 있다. */
 static int active_bubbles(const BBGame *game)
@@ -92,6 +107,7 @@ static void test_platforms_and_momentum(void)
     /* 아래에서 일방 통과 발판을 지나 올라간 뒤 위에서 착지한다. */
     for (int x = 2; x <= 10; ++x)
         game.maps[0][22][x] = 2;
+    restart_physics_fixture(&game);
     CHECK(fabsf(game.players[0].body.y - 25.025f) < 0.001f);
     tick(&game, 0.0f, true, false);
     CHECK(game.events.jump);
@@ -164,9 +180,11 @@ static void test_shifted_platform_fire_raycast(void)
             fixture(&game);
             /* 원본 타일은 x=12..13, y=20이다. 게임은 이번 틱에도 같은 방향으로 움직인다. */
             game.maps[0][20][12] = 2;
-            game.platform_offset = 0.9f * (float)direction;
-            game.platform_step = 0.0f;
-            game.platform_direction = direction;
+            restart_physics_fixture(&game);
+            CHECK(game.platform_count == 1);
+            game.platforms[0].offset = 0.9f * (float)direction;
+            game.platforms[0].step = 0.0f;
+            game.platforms[0].direction = direction;
             float player_x;
             if(direction > 0)
                 player_x = in_range ? 9.9f : 9.5f;
@@ -182,7 +200,7 @@ static void test_shifted_platform_fire_raycast(void)
             {
                 /* 발판 갱신 뒤 좌표로 계산한다. 오른쪽 발사는 왼쪽 면, 왼쪽 발사는
                  * 오른쪽 면에서 버블 반지름 0.75와 여유 0.001만큼 떨어져 생성된다. */
-                float boundary = (direction > 0 ? 12.0f : 13.0f) + game.platform_offset;
+                float boundary = (direction > 0 ? 12.0f : 13.0f) + game.platforms[0].offset;
                 float expected_x = boundary - (float)direction * 0.751f;
                 /* 생성 직후 같은 틱에 난수 힘이 적용되므로 미세한 이동은 허용한다. */
                 CHECK(fabsf(game.bubbles[0].body.x - expected_x) < 0.003f);
@@ -210,9 +228,11 @@ static void test_shifted_platform_enemy_jump_target(void)
             BBGame game;
             fixture(&game);
             game.maps[0][22][12] = 2;
-            game.platform_offset = 0.9f * (float)direction;
-            game.platform_step = 0.0f;
-            game.platform_direction = direction;
+            restart_physics_fixture(&game);
+            CHECK(game.platform_count == 1);
+            game.platforms[0].offset = 0.9f * (float)direction;
+            game.platforms[0].step = 0.0f;
+            game.platforms[0].direction = direction;
             float enemy_x;
             if(direction > 0)
                 enemy_x = under_platform ? 13.5f : 12.4f;
@@ -1128,11 +1148,11 @@ static void test_two_player_lives_and_round_mana(void)
     CHECK(game.players[0].body.x == 4.0f && game.players[1].body.x == 28.0f);
 
     isolate_physics(&game);
-    /* 한 명이 완전히 탈락해도 다른 플레이어의 게임은 계속된다. */
+    /* 마지막 목숨을 잃은 쪽은 구조 버블로 남고 동료의 플레이는 계속된다. */
     game.players[0].lives = 1;
     collide_enemy_with_player(&game, 0);
     wait_ticks(&game, 190);
-    CHECK(game.players[0].state == BB_PLAYER_OUT && game.players[0].lives == 0);
+    CHECK(game.players[0].state == BB_PLAYER_BUBBLE && game.players[0].lives == 0);
     CHECK(game.state == BB_STATE_PLAY && game.players[1].state == BB_PLAYER_NORMAL);
     float out_energy = game.players[0].energy;
     BBInput inputs[BB_MAX_PLAYERS] = {{ .move = 1.0f, .jump = true, .fire = true }, {0}};
@@ -1142,12 +1162,12 @@ static void test_two_player_lives_and_round_mana(void)
     CHECK(game.players[0].energy == out_energy && game.players[0].score == 300);
     CHECK(game.pickups[0].active);
 
-    /* 남은 플레이어가 라운드를 넘겨도 탈락한 플레이어를 되살리지 않는다. */
+    /* 라운드를 넘겨도 구조 버블은 동료가 구할 때까지 그대로 유지한다. */
     memset(game.enemies, 0, sizeof game.enemies);
     bb_game_update(&game, NULL, BB_FIXED_DT);
     game.state_time = 6.999f;
     bb_game_update(&game, NULL, BB_FIXED_DT);
-    CHECK(game.level == 2 && game.players[0].state == BB_PLAYER_OUT);
+    CHECK(game.level == 2 && game.players[0].state == BB_PLAYER_BUBBLE);
     CHECK(game.players[0].energy == out_energy);
     isolate_physics(&game);
     game.players[1].lives = 1;
@@ -1200,7 +1220,7 @@ static void test_last_life_during_clear(void)
     CHECK(game.level == 1 && game.state == BB_STATE_PLAY);
     CHECK(game.players[0].state == BB_PLAYER_DEAD && game.players[0].lives == 0);
     wait_ticks(&game, 121);
-    CHECK(game.players[0].state == BB_PLAYER_OUT);
+    CHECK(game.players[0].state == BB_PLAYER_BUBBLE);
 
     /* 최종 클리어 경계와 마지막 목숨의 사망이 겹쳐도 승리로 바뀌지 않는다. */
     game.level = BB_LEVEL_COUNT - 1;
@@ -1223,8 +1243,10 @@ static void test_last_life_during_clear(void)
 static void test_finite_input_and_determinism(void)
 {
     BBGame a, b;
-    fixture_mode(&a, 2);
-    fixture_mode(&b, 2);
+    uint8_t maps[BB_LEVEL_COUNT][BB_MAP_HEIGHT][BB_MAP_WIDTH];
+    bb_levels_build(&maps[0][0][0]);
+    bb_game_init(&a, &maps[0][0][0], UINT32_C(1234567));
+    bb_game_init(&b, &maps[0][0][0], UINT32_C(1234567));
     bb_game_start(&a, 2);
     bb_game_start(&b, 2);
     bb_game_skip_intro(&a);
@@ -1268,10 +1290,23 @@ static void test_finite_input_and_determinism(void)
         /* 구조체 전체 비교 대신 실제 의미가 있는 필드를 비교해 패딩 바이트 영향을 배제한다. */
         CHECK(a.rng == b.rng);
         CHECK(a.state == b.state && a.level == b.level);
+        CHECK(a.round_enemy_quota == b.round_enemy_quota);
+        CHECK(a.platform_warning_cooldown == b.platform_warning_cooldown);
+        CHECK(a.platform_last_choice == b.platform_last_choice);
         /* 발판 이동도 같은 시간/입력에서 동일해야 하며 왕복 범위를 벗어나지 않는다. */
-        CHECK(isfinite(a.platform_offset) && a.platform_offset >= -1.0f && a.platform_offset <= 1.0f);
-        CHECK(a.platform_offset == b.platform_offset && a.platform_step == b.platform_step);
-        CHECK(a.platform_direction == b.platform_direction);
+        CHECK(a.platform_count == BB_LEVEL_PLATFORM_COUNT && a.platform_count == b.platform_count);
+        for (int i = 0; i < a.platform_count; ++i) {
+            const BBMovingPlatform *ap = &a.platforms[i];
+            const BBMovingPlatform *bp = &b.platforms[i];
+            CHECK(ap->x == bp->x && ap->y == bp->y && ap->width == bp->width);
+            CHECK(isfinite(ap->offset) && fabsf(ap->offset) <= BB_PLATFORM_TRAVEL);
+            CHECK(isfinite(ap->step) && fabsf(ap->step) <= ap->speed * BB_FIXED_DT + 0.00001f);
+            CHECK(ap->speed >= BB_PLATFORM_MIN_SPEED && ap->speed < BB_PLATFORM_MAX_SPEED);
+            CHECK(ap->offset == bp->offset && ap->step == bp->step && ap->speed == bp->speed);
+            CHECK(ap->direction == bp->direction && (ap->direction == -1 || ap->direction == 1));
+            CHECK(ap->state == bp->state && ap->state_time == bp->state_time);
+            CHECK(ap->solid_duration == bp->solid_duration && ap->vanished == bp->vanished);
+        }
         for (int p = 0; p < BB_MAX_PLAYERS; ++p) {
             CHECK(a.players[p].body.x == b.players[p].body.x);
             CHECK(a.players[p].body.y == b.players[p].body.y);
@@ -1287,6 +1322,17 @@ static void test_finite_input_and_determinism(void)
             CHECK(a.players[p].lives == b.players[p].lives);
             CHECK(a.players[p].lives >= 0 && a.players[p].lives <= BB_STARTING_LIVES);
             CHECK(a.players[p].state == b.players[p].state);
+            CHECK(a.players[p].rescue_pop_timer == b.players[p].rescue_pop_timer);
+            CHECK(isfinite(a.players[p].rescue_pop_timer) && a.players[p].rescue_pop_timer >= 0.0f);
+            CHECK(a.players[p].rescue_time_left == b.players[p].rescue_time_left);
+            CHECK(isfinite(a.players[p].rescue_time_left) && a.players[p].rescue_time_left >= 0.0 &&
+                  a.players[p].rescue_time_left <= BB_RESCUE_BUBBLE_SECONDS);
+            CHECK(a.players[p].rescue_turn_timer == b.players[p].rescue_turn_timer);
+            CHECK(isfinite(a.players[p].rescue_turn_timer) && a.players[p].rescue_turn_timer >= 0.0);
+            CHECK(a.players[p].rescue_drift_vx == b.players[p].rescue_drift_vx &&
+                  a.players[p].rescue_drift_vy == b.players[p].rescue_drift_vy);
+            CHECK(isfinite(a.players[p].rescue_drift_vx) && isfinite(a.players[p].rescue_drift_vy));
+            CHECK(a.players[p].rescue_rng == b.players[p].rescue_rng);
             CHECK(a.players[p].score == b.players[p].score);
         }
         /* 비활성 슬롯은 이전 값을 남길 수 있으므로 활성 여부를 먼저 맞추고 사용 중인 값만 검사한다. */
@@ -1334,6 +1380,1142 @@ static void test_finite_input_and_determinism(void)
     CHECK(saw_enemy_movement);
 }
 
+/* 크기 변경은 좌표만 옮겨야 하며 속도와 지지 상태는 그대로 유지해야 한다. */
+static void check_translated_body(const BBBody *body, const BBBody *previous, float dx, float dy)
+{
+    CHECK(fabsf(body->x - (previous->x + dx)) < 0.0001f);
+    CHECK(fabsf(body->y - (previous->y + dy)) < 0.0001f);
+    CHECK(body->vx == previous->vx && body->vy == previous->vy);
+    CHECK(body->grounded == previous->grounded);
+}
+
+/* 플레이 도중 해상도를 바꿔도 독립 발판의 위상, 타이머, 점수와 난수열을
+ * 초기화하지 않는다. 발판과 탑승자가 함께 옮겨진 뒤 다음 틱에도 동승이 이어진다. */
+static void test_world_resize_preserves_gameplay(void)
+{
+    uint8_t maps[BB_LEVEL_COUNT][BB_MAP_HEIGHT][BB_MAP_WIDTH];
+    BBGame game, previous;
+    bb_levels_build(&maps[0][0][0]);
+    bb_game_init(&game, &maps[0][0][0], 17);
+    bb_game_start(&game, 2);
+    bb_game_skip_intro(&game);
+    isolate_physics(&game);
+    wait_ticks(&game, 120);
+    int lower = 0;
+    while(lower < game.platform_count && game.platforms[lower].y != 22)
+        ++lower;
+    CHECK(lower < game.platform_count);
+    game.players[0].body = (BBBody){ .x = 6.0f + game.platforms[lower].offset,
+        .y = 22.0f - 0.975f, .vx = 1.75f, .grounded = true };
+    game.players[0].jump_start_y = game.players[0].body.y;
+    game.players[0].score = 1234;
+    game.players[0].lives = 4;
+    game.players[0].energy = 0.3f;
+    game.players[0].energy_elapsed = 4.5;
+    game.players[0].fire_cooldown = 0.2f;
+    game.enemies[0] = (BBEnemy){ .body = {.x = 20.0f, .y = 10.0f, .vx = 2.0f, .vy = -1.0f},
+        .active = true, .state = BB_ENEMY_CAPTURED, .spawn_y = 9.25f, .age = 2.0f };
+    /* 등장 연출도 중간 높이를 유지해야 하며 다음 틱에 옛 원점으로 되감기면 안 된다. */
+    game.enemies[1] = (BBEnemy){ .body = {.x = 24.0f, .y = 4.0f},
+        .active = true, .state = BB_ENEMY_SPAWNING, .spawn_y = 8.0f, .age = 1.0f };
+    /* 두 적을 직접 주입한 시험이다. 새 적이 필요 없는 경우의 상태 보존만 검사한다. */
+    game.round_enemy_quota = 2;
+    game.bubbles[0] = (BBBubble){ .body = game.enemies[0].body,
+        .active = true, .captured_enemy = 0, .age = 3.5f };
+    game.boulders[0] = (BBBoulder){ .body = {.x = 18.0f, .y = 8.0f, .vx = -2.0f, .vy = 1.0f},
+        .active = true, .age = 1.0f };
+    game.pickups[0] = (BBPickup){ .body = {.x = 12.0f, .y = 18.0f - 0.95f, .grounded = true},
+        .active = true, .age = 1.5f, .type = BB_PICKUP_WATERMELON };
+    previous = game;
+    bb_game_resize(&game, 64, 40);
+    CHECK(game.world_width == 64 && game.world_height == 40);
+    CHECK(game.rng == previous.rng && game.ticks == previous.ticks);
+    CHECK(game.level == previous.level && game.state == previous.state);
+    CHECK(game.level_time == previous.level_time && game.state_time == previous.state_time);
+    CHECK(memcmp(game.maps, previous.maps, sizeof game.maps) == 0);
+    CHECK(memcmp(game.pickup_order, previous.pickup_order, sizeof game.pickup_order) == 0);
+    CHECK(game.pickup_cursor == previous.pickup_cursor);
+    for(int i = 0; i < BB_MAX_PLAYERS; ++i)
+    {
+        BBBody expected = previous.players[i].body;
+        expected.vx *= 2.0f;
+        check_translated_body(&game.players[i].body, &expected, 16.0f, 12.0f);
+        CHECK(game.players[i].jump_start_y == previous.players[i].jump_start_y + 12.0f);
+        CHECK(game.players[i].score == previous.players[i].score && game.players[i].lives == previous.players[i].lives);
+        CHECK(game.players[i].energy == previous.players[i].energy);
+        CHECK(game.players[i].energy_elapsed == previous.players[i].energy_elapsed);
+        CHECK(game.players[i].fire_cooldown == previous.players[i].fire_cooldown);
+    }
+    check_translated_body(&game.enemies[0].body, &previous.enemies[0].body, 16.0f, 12.0f);
+    check_translated_body(&game.enemies[1].body, &previous.enemies[1].body, 16.0f, 12.0f);
+    check_translated_body(&game.bubbles[0].body, &previous.bubbles[0].body, 16.0f, 12.0f);
+    check_translated_body(&game.boulders[0].body, &previous.boulders[0].body, 16.0f, 12.0f);
+    check_translated_body(&game.pickups[0].body, &previous.pickups[0].body, 16.0f, 12.0f);
+    CHECK(game.enemies[0].spawn_y == previous.enemies[0].spawn_y + 12.0f);
+    CHECK(game.enemies[0].age == previous.enemies[0].age && game.bubbles[0].age == previous.bubbles[0].age);
+    CHECK(game.boulders[0].age == previous.boulders[0].age && game.pickups[0].age == previous.pickups[0].age);
+    CHECK(game.bubbles[0].captured_enemy == previous.bubbles[0].captured_enemy);
+    for(int i = 0; i < game.platform_count; ++i)
+    {
+        CHECK(game.platforms[i].x == previous.platforms[i].x + 16);
+        CHECK(game.platforms[i].y == previous.platforms[i].y + 12);
+        CHECK(game.platforms[i].offset == previous.platforms[i].offset && game.platforms[i].step == previous.platforms[i].step);
+        CHECK(game.platforms[i].speed == previous.platforms[i].speed && game.platforms[i].direction == previous.platforms[i].direction);
+    }
+    previous = game;
+    bb_game_resize(&game, 64, 40);
+    CHECK(memcmp(&game, &previous, sizeof game) == 0);
+    tick(&game, 0.0f, false, false);
+    CHECK(game.players[0].body.grounded);
+    CHECK(fabsf(game.players[0].body.x - (previous.players[0].body.x + game.platforms[lower].step)) < 0.0001f);
+    CHECK(fabsf(game.players[0].body.y - previous.players[0].body.y) < 0.0001f);
+    CHECK(game.enemies[1].body.y > previous.enemies[1].body.y);
+    CHECK(game.enemies[1].body.y < previous.enemies[1].body.y + 0.1f);
+}
+
+/* 실제 플레이 영역이 넓어졌다면 원래 오른쪽 끝인 x=32를 넘어 걸을 수 있고,
+ * 양 끝에서 새 벽에 멈추며 거품도 새 벽 앞에서 생성되어야 한다. */
+static void test_expanded_world_movement_and_wrap(void)
+{
+    uint8_t maps[BB_LEVEL_COUNT][BB_MAP_HEIGHT][BB_MAP_WIDTH];
+    BBGame game;
+    bb_levels_build(&maps[0][0][0]);
+    bb_game_init(&game, &maps[0][0][0], 17);
+    bb_game_resize(&game, 64, 40);
+    bb_game_start(&game, 2);
+    bb_game_skip_intro(&game);
+    isolate_physics(&game);
+    game.players[0].body = (BBBody){ .x = 36.0f, .y = 38.0f - 0.975f, .grounded = true };
+    game.players[1].body = (BBBody){ .x = 20.0f, .y = 38.0f - 0.975f, .grounded = true };
+    BBInput inputs[BB_MAX_PLAYERS] = {{.move = 1.0f}, {.move = -1.0f}};
+    for(int i = 0; i < 600; ++i)
+        bb_game_update(&game, inputs, BB_FIXED_DT);
+    CHECK(fabsf(game.players[0].body.x - 61.1f) < 0.001f);
+    CHECK(fabsf(game.players[1].body.x - 2.9f) < 0.001f);
+    CHECK(game.players[0].body.grounded && game.players[1].body.grounded);
+    tick(&game, 0.0f, false, true);
+    CHECK(game.events.fire && game.bubbles[0].active);
+    CHECK(game.bubbles[0].body.x > 60.0f && game.bubbles[0].body.x + 0.75f <= 62.001f);
+
+    /* 원래 높이의 하단을 지났다는 이유로 일찍 순환하지 않고 실제 하단을 기준으로 한다. */
+    game.players[0].body = (BBBody){ .x = 32.0f, .y = 29.1f };
+    game.players[0].falling = true;
+    tick(&game, 0.0f, false, false);
+    CHECK(game.players[0].body.y > 29.1f && game.players[0].body.y < 30.0f);
+    game.players[0].body = (BBBody){ .x = 32.0f, .y = 41.01f };
+    game.players[0].falling = true;
+    game.bubbles[0] = (BBBubble){ .body = {.x = 40.0f, .y = 41.01f}, .active = true, .captured_enemy = -1 };
+    game.boulders[0] = (BBBoulder){ .body = {.x = 45.0f, .y = 41.01f}, .active = true };
+    game.pickups[0] = (BBPickup){ .body = {.x = 50.0f, .y = 41.01f}, .active = true };
+    tick(&game, 0.0f, false, false);
+    CHECK(game.players[0].body.y > -1.1f && game.players[0].body.y < 0.0f);
+    CHECK(game.bubbles[0].body.y > -1.1f && game.bubbles[0].body.y < 0.0f);
+    CHECK(game.boulders[0].body.y > -1.1f && game.boulders[0].body.y < 0.0f);
+    CHECK(game.pickups[0].body.y > -1.1f && game.pickups[0].body.y < 0.0f);
+}
+
+/* 폭을 줄일 때 바깥에 있던 객체가 새 벽 속에 남지 않도록 각 반폭으로 제한한다.
+ * 공개 크기 입력의 상하한, NULL과 기본 크기에서의 원본 타일 호환성도 확인한다. */
+static void test_world_resize_limits_and_shrink(void)
+{
+    BBGame game;
+    fixture_mode(&game, 2);
+    CHECK(game.world_width == BB_MAP_WIDTH && game.world_height == BB_MAP_HEIGHT);
+    for(int y = 0; y < BB_MAP_HEIGHT; ++y)
+        for(int x = 0; x < BB_MAP_WIDTH; ++x)
+            CHECK(bb_game_tile(&game, x, y) == game.maps[game.level][y][x]);
+    bb_game_resize(NULL, 64, 40);
+    CHECK(bb_game_tile(NULL, 0, 0) == 0);
+    bb_game_resize(&game, INT_MAX, INT_MAX);
+    CHECK(game.world_width == BB_WORLD_MAX_WIDTH && game.world_height == BB_WORLD_MAX_HEIGHT);
+    bb_game_resize(&game, 64, 40);
+    game.players[0].body.x = 3.0f;
+    game.players[0].body.y = 3.0f;
+    game.players[0].jump_start_y = 1.0f;
+    game.players[1].body.x = 61.0f;
+    game.enemies[0] = (BBEnemy){ .body = {.x = 61.0f, .y = 20.0f, .vx = -1.0f}, .active = true };
+    game.bubbles[0] = (BBBubble){ .body = {.x = 61.0f, .y = 20.0f, .vx = -2.0f}, .active = true, .captured_enemy = -1 };
+    game.boulders[0] = (BBBoulder){ .body = {.x = 3.0f, .y = 20.0f, .vx = 1.0f}, .active = true };
+    game.pickups[0] = (BBPickup){ .body = {.x = 61.0f, .y = 20.0f}, .active = true };
+    uint32_t rng = game.rng;
+    bb_game_resize(&game, INT_MIN, INT_MIN);
+    CHECK(game.world_width == BB_MAP_WIDTH && game.world_height == BB_MAP_HEIGHT);
+    CHECK(game.rng == rng);
+    CHECK(game.players[0].body.x >= 2.9f && game.players[1].body.x <= 29.1f);
+    CHECK(game.players[0].body.y == -1.0f && !game.players[0].body.grounded);
+    CHECK(game.players[0].jump_start_y == -3.0f);
+    CHECK(game.enemies[0].body.x <= 29.1f && game.enemies[0].body.vx == -1.0f);
+    CHECK(game.bubbles[0].body.x <= 29.25f && game.bubbles[0].body.vx == -2.0f);
+    CHECK(game.boulders[0].body.x >= 2.75f && game.boulders[0].body.vx == 1.0f);
+    CHECK(game.pickups[0].body.x <= 29.05f);
+}
+
+/* 폭 비례 이동은 플레이어의 가로축에만 적용한다. 기본/2배/3배/최대 폭에서
+ * 지상, 점프 관성, 공중 제어와 마나 가속을 검사하고 적의 속도는 따로 비교한다. */
+static void test_player_width_speed(void)
+{
+    const int widths[] = {32, 64, 96, BB_WORLD_MAX_WIDTH};
+    for(unsigned w = 0; w < sizeof widths / sizeof widths[0]; ++w)
+    {
+        for(int boosted = 0; boosted <= 1; ++boosted)
+        {
+            for(int direction = -1; direction <= 1; direction += 2)
+            {
+                BBGame game;
+                fixture(&game);
+                bb_game_resize(&game, widths[w], BB_MAP_HEIGHT);
+                isolate_physics(&game);
+                game.players[0].body = (BBBody){ .x = (float)widths[w] * 0.5f,
+                    .y = 25.025f, .grounded = true };
+                set_energy_phase(&game.players[0], boosted != 0, 1.0);
+                float multiplier = (float)widths[w] / BB_MAP_WIDTH * (boosted ? 2.0f : 1.0f);
+                float before_x = game.players[0].body.x;
+                tick(&game, (float)direction, false, false);
+                CHECK(fabsf(game.players[0].body.vx - (float)direction * BB_PLAYER_GROUND_SPEED * multiplier) < 0.0001f);
+                CHECK(fabsf(game.players[0].body.x - before_x - game.players[0].body.vx * BB_FIXED_DT) < 0.0001f);
+                tick(&game, (float)direction, true, false);
+                CHECK(fabsf(game.players[0].body.vy + 17.75f) < 0.0001f);
+                CHECK(fabsf(game.players[0].body.vx - (float)direction * BB_PLAYER_GROUND_SPEED * multiplier) < 0.0001f);
+                tick(&game, 0.0f, false, false);
+                CHECK(fabsf(game.players[0].body.vx - (float)direction * BB_PLAYER_GROUND_SPEED * multiplier) < 0.0001f);
+                tick(&game, (float)-direction, false, false);
+                CHECK(fabsf(game.players[0].body.vx + (float)direction * BB_PLAYER_AIR_SPEED * multiplier) < 0.0001f);
+                CHECK(fabsf(game.players[0].body.vy + 17.25f) < 0.0001f);
+                game.players[0].falling = true;
+                tick(&game, (float)direction, false, false);
+                CHECK(fabsf(game.players[0].body.vx - (float)direction * BB_PLAYER_AIR_SPEED * multiplier) < 0.0001f);
+                CHECK(game.players[0].body.vy == 6.0f);
+                game.enemies[0] = (BBEnemy){ .body = {.x = 4.0f, .y = 25.05f, .grounded = true},
+                    .active = true, .state = BB_ENEMY_WALKING, .type = BB_ENEMY_ZENCHAN, .facing = 1 };
+                tick(&game, 0.0f, false, false);
+                CHECK(fabsf(game.enemies[0].body.vx - 6.0f) < 0.0001f);
+            }
+        }
+    }
+}
+
+/* 입력이 없는 점프 관성도 즉시 새 폭에 맞아야 한다. 확대/축소를 반복해도
+ * 배율이 중복 누적되지 않고, 마나 가속의 시작/끝은 정확히 두 배/절반이다. */
+static void test_width_resize_momentum(void)
+{
+    const int widths[] = {64, 96, 32, 256, 64, 32};
+    BBGame game;
+    fixture(&game);
+    game.players[0].body = (BBBody){ .x = 16.0f, .y = 10.0f, .vx = 6.0f, .vy = -5.0f };
+    game.players[0].falling = false;
+    game.players[0].air_control = false;
+    game.players[0].jump_start_y = 20.0f;
+    uint64_t ticks = game.ticks;
+    for(unsigned i = 0; i < sizeof widths / sizeof widths[0]; ++i)
+    {
+        bb_game_resize(&game, widths[i], BB_MAP_HEIGHT);
+        CHECK(fabsf(game.players[0].body.vx - 6.0f * (float)widths[i] / BB_MAP_WIDTH) < 0.0001f);
+        CHECK(game.players[0].body.vy == -5.0f && game.players[0].body.y == 10.0f);
+        CHECK(game.ticks == ticks && !game.players[0].air_control && !game.players[0].falling);
+        float vx = game.players[0].body.vx;
+        bb_game_resize(&game, widths[i], BB_MAP_HEIGHT);
+        CHECK(game.players[0].body.vx == vx);
+    }
+    isolate_physics(&game);
+    bb_game_resize(&game, 96, BB_MAP_HEIGHT);
+    set_energy_phase(&game.players[0], false, 14.999);
+    tick(&game, 0.0f, false, false);
+    CHECK(game.players[0].boosting && fabsf(game.players[0].body.vx - 36.0f) < 0.0001f);
+    bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+    CHECK(fabsf(game.players[0].body.vx - 24.0f) < 0.0001f);
+    set_energy_phase(&game.players[0], true, 4.999);
+    tick(&game, 0.0f, false, false);
+    CHECK(!game.players[0].boosting && fabsf(game.players[0].body.vx - 12.0f) < 0.0001f);
+}
+
+/* 최대 폭의 가속 속도는 96타일/초다. 가장 큰 허용 dt에서도 외벽 두 칸과
+ * 내부 한 칸짜리 벽을 건너뛰지 않고, 양방향에서 첫 경계에 멈춰야 한다. */
+static void test_max_width_swept_walls(void)
+{
+    uint8_t maps[BB_LEVEL_COUNT][BB_MAP_HEIGHT][BB_MAP_WIDTH];
+    BBGame game;
+    bb_levels_build(&maps[0][0][0]);
+    maps[0][24][16] = maps[0][25][16] = 3;
+    bb_game_init(&game, &maps[0][0][0], 17);
+    bb_game_resize(&game, BB_WORLD_MAX_WIDTH, BB_MAP_HEIGHT);
+    bb_game_start(&game, 2);
+    bb_game_skip_intro(&game);
+    isolate_physics(&game);
+    BBInput inputs[BB_MAX_PLAYERS] = {{.move = 1.0f}, {.move = -1.0f}};
+    for(int p = 0; p < BB_MAX_PLAYERS; ++p)
+        set_energy_phase(&game.players[p], true, 1.0);
+    game.players[0].body = (BBBody){.x = 253.0f, .y = 25.025f, .grounded = true};
+    game.players[1].body = (BBBody){.x = 3.0f, .y = 25.025f, .grounded = true};
+    bb_game_update(&game, inputs, 1.0f / 30.0f);
+    CHECK(fabsf(game.players[0].body.x - 253.1f) < 0.0001f);
+    CHECK(fabsf(game.players[1].body.x - 2.9f) < 0.0001f);
+    game.players[0].body = (BBBody){.x = 126.9f, .y = 25.025f, .grounded = true};
+    game.players[1].body = (BBBody){.x = 130.1f, .y = 25.025f, .grounded = true};
+    bb_game_update(&game, inputs, 1.0f / 30.0f);
+    CHECK(fabsf(game.players[0].body.x - 127.1f) < 0.0001f);
+    CHECK(fabsf(game.players[1].body.x - 129.9f) < 0.0001f);
+    CHECK(game.players[0].body.vx == 0.0f && game.players[1].body.vx == 0.0f);
+}
+
+/* 모든 라운드에서 폭 비례 올림을 적용하며 최대 40마리가 배열 안에 들어간다.
+ * 기본 폭의 기존 1..5마리 규칙과 홀수 폭의 올림 경계도 함께 확인한다. */
+static void test_width_enemy_counts(void)
+{
+    const int widths[] = {32, 33, 64, 96, BB_WORLD_MAX_WIDTH};
+    _Static_assert(BB_MAX_ENEMIES >= 40, "Maximum-width round five needs forty enemy slots");
+    for(unsigned w = 0; w < sizeof widths / sizeof widths[0]; ++w)
+    {
+        BBGame game;
+        bb_game_init(&game, NULL, 99);
+        bb_game_resize(&game, widths[w], BB_MAP_HEIGHT);
+        bb_game_start(&game, 2);
+        CHECK(game.round_enemy_quota == 0);
+        bb_game_skip_intro(&game);
+        for(int level = 0; level < BB_LEVEL_COUNT; ++level)
+        {
+            int expected = ((level + 1) * widths[w] + BB_MAP_WIDTH - 1) / BB_MAP_WIDTH;
+            CHECK(game.level == level && game.state == BB_STATE_PLAY);
+            CHECK(game.round_enemy_quota == expected && bb_game_enemies_left(&game) == expected);
+            for(int i = 0; i < BB_MAX_ENEMIES; ++i)
+            {
+                CHECK(game.enemies[i].active == (i < expected));
+                if(i >= expected) continue;
+                CHECK(game.enemies[i].state == BB_ENEMY_SPAWNING);
+                CHECK(game.enemies[i].body.x >= 2.9f && game.enemies[i].body.x <= (float)widths[w] - 2.9f);
+                CHECK(game.enemies[i].type == (BBEnemyType)((i + level) % BB_ENEMY_TYPE_COUNT));
+            }
+            game.state = BB_STATE_CLEAR;
+            game.state_time = 6.999f;
+            tick(&game, 0.0f, false, false);
+        }
+        CHECK(game.state == BB_STATE_SCORE && game.won);
+    }
+}
+
+/* 플레이 중 확장 즉시 새 적을 예약하되, 기존 포획과 처치 기록은 유지한다.
+ * 축소/재확대, 클리어 확정 이후와 새 게임의 생성 할당량도 구분한다. */
+static void test_live_width_enemy_additions(void)
+{
+    BBGame game;
+    bb_game_init(&game, NULL, 99);
+    bb_game_start(&game, 2);
+    bb_game_skip_intro(&game);
+    game.enemies[0].state = BB_ENEMY_CAPTURED;
+    game.enemies[0].body = (BBBody){.x = 16.0f, .y = 10.0f};
+    game.enemies[0].age = 2.0f;
+    game.bubbles[0] = (BBBubble){.body = game.enemies[0].body, .active = true,
+        .captured_enemy = 0, .age = 1.0f};
+    game.players[0].score = 1234;
+    uint64_t ticks = game.ticks;
+    bb_game_resize(&game, 96, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 3 && bb_game_enemies_left(&game) == 3);
+    CHECK(game.ticks == ticks && game.players[0].score == 1234);
+    CHECK(game.enemies[0].state == BB_ENEMY_CAPTURED && game.enemies[0].age == 2.0f);
+    CHECK(game.enemies[0].body.x == 48.0f && game.bubbles[0].body.x == 48.0f);
+    CHECK(game.bubbles[0].captured_enemy == 0 && game.bubbles[0].age == 1.0f);
+    for(int i = 1; i < 3; ++i)
+    {
+        CHECK(game.enemies[i].active && game.enemies[i].state == BB_ENEMY_SPAWNING);
+        CHECK(game.enemies[i].age == 0.0f && game.enemies[i].spawn_delay >= 0.45f);
+    }
+    game.enemies[1].active = false;
+    game.enemies[1].state = BB_ENEMY_DEAD;
+    uint32_t rng = game.rng;
+    bb_game_resize(&game, 32, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 3 && bb_game_enemies_left(&game) == 2);
+    bb_game_resize(&game, 96, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 3 && bb_game_enemies_left(&game) == 2 && game.rng == rng);
+    CHECK(!game.enemies[1].active && game.enemies[1].state == BB_ENEMY_DEAD);
+    bb_game_resize(&game, 128, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 4 && bb_game_enemies_left(&game) == 3);
+    CHECK(game.enemies[3].active && !game.enemies[1].active);
+    CHECK(game.enemies[0].state == BB_ENEMY_CAPTURED && game.bubbles[0].captured_enemy == 0);
+
+    memset(game.enemies, 0, sizeof game.enemies);
+    memset(game.bubbles, 0, sizeof game.bubbles);
+    game.state = BB_STATE_CLEAR;
+    game.state_time = 2.0f;
+    rng = game.rng;
+    bb_game_resize(&game, 256, BB_MAP_HEIGHT);
+    CHECK(game.state == BB_STATE_CLEAR && game.state_time == 2.0f);
+    CHECK(game.round_enemy_quota == 4 && bb_game_enemies_left(&game) == 0 && game.rng == rng);
+    game.state_time = 6.999f;
+    tick(&game, 0.0f, false, false);
+    CHECK(game.level == 1 && game.round_enemy_quota == 16 && bb_game_enemies_left(&game) == 16);
+    bb_game_start(&game, 2);
+    CHECK(game.round_enemy_quota == 0 && bb_game_enemies_left(&game) == 0);
+    bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 0 && bb_game_enemies_left(&game) == 0);
+    bb_game_skip_intro(&game);
+    CHECK(game.round_enemy_quota == 2 && bb_game_enemies_left(&game) == 2);
+    bb_game_menu(&game);
+    rng = game.rng;
+    bb_game_resize(&game, 96, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 2 && bb_game_enemies_left(&game) == 2 && game.rng == rng);
+    game.state = BB_STATE_SCORE;
+    bb_game_resize(&game, 128, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 2 && bb_game_enemies_left(&game) == 2 && game.rng == rng);
+}
+
+/* 최대 폭의 마지막 라운드 적이 동시에 음식으로 바뀌어도 보상을 버리지 않는다.
+ * 20종 드롭 묶음 두 번이 모두 살아 있어야 하며, 후속 틱에도 슬롯을 덮어쓰면 안 된다. */
+static void test_maximum_enemy_pickup_capacity(void)
+{
+    BBGame game;
+    bb_game_init(&game, NULL, 99);
+    bb_game_resize(&game, BB_WORLD_MAX_WIDTH, BB_MAP_HEIGHT);
+    bb_game_start(&game, 2);
+    bb_game_skip_intro(&game);
+    while(game.level < BB_LEVEL_COUNT - 1)
+    {
+        game.state = BB_STATE_CLEAR;
+        game.state_time = 6.999f;
+        tick(&game, 0.0f, false, false);
+    }
+    CHECK(game.round_enemy_quota == 40 && bb_game_enemies_left(&game) == 40);
+    for(int i = 0; i < BB_MAX_ENEMIES; ++i)
+    {
+        game.enemies[i].state = BB_ENEMY_DEAD;
+        game.enemies[i].body = (BBBody){.x = 4.0f + (float)i * 6.0f, .y = 10.0f};
+        game.enemies[i].bounces = 4;
+    }
+    tick(&game, 0.0f, false, false);
+    CHECK(active_pickups(&game) == 40);
+    int types[BB_PICKUP_TYPE_COUNT] = {0};
+    for(int i = 0; i < BB_MAX_ENEMIES; ++i)
+    {
+        CHECK(!game.enemies[i].active);
+        CHECK(game.pickups[i].active);
+        CHECK(game.pickups[i].type >= 0 && game.pickups[i].type < BB_PICKUP_TYPE_COUNT);
+        ++types[game.pickups[i].type];
+    }
+    for(int type = 0; type < BB_PICKUP_TYPE_COUNT; ++type)
+        CHECK(types[type] == 2);
+    tick(&game, 0.0f, false, false);
+    CHECK(active_pickups(&game) == 40);
+}
+
+/* 최대 폭에서 서로 반대 방향으로 빠르게 이동하면 한 30Hz 갱신 사이에
+ * 바위를 완전히 지나칠 수 있다. 내부 120Hz 접촉과 외부 입력/이벤트 계약을 함께 검사한다. */
+static void test_max_width_substep_contacts(void)
+{
+    BBGame game, reference;
+    fixture(&game);
+    bb_game_resize(&game, BB_WORLD_MAX_WIDTH, BB_MAP_HEIGHT);
+    isolate_physics(&game);
+    game.players[0].body = (BBBody){.x = 100.0f, .y = 25.025f, .grounded = true};
+    game.players[0].invulnerable = 0.0f;
+    set_energy_phase(&game.players[0], true, 1.0);
+    game.boulders[0] = (BBBoulder){.body = {.x = 101.8f, .y = 25.025f, .vx = -15.0f}, .active = true};
+    int lives = game.players[0].lives;
+    uint64_t ticks = game.ticks;
+    BBInput inputs[BB_MAX_PLAYERS] = {{.move = 1.0f}};
+    bb_game_update(&game, inputs, 1.0f / 30.0f);
+    CHECK(game.players[0].state == BB_PLAYER_DEAD);
+    CHECK(game.players[0].lives == lives - 1 && game.events.death);
+    CHECK(game.ticks == ticks + 1);
+
+    /* 첫 소단계의 점프/발사 이벤트를 외부 호출 종료까지 보존한다.
+     * 같은 입력을 직접 120Hz 네 번 전달한 결과와 위치, 난수 진행도 일치해야 한다. */
+    fixture(&game);
+    bb_game_resize(&game, BB_WORLD_MAX_WIDTH, BB_MAP_HEIGHT);
+    isolate_physics(&game);
+    game.players[0].body = (BBBody){.x = 100.0f, .y = 25.025f, .grounded = true};
+    set_energy_phase(&game.players[0], true, 1.0);
+    inputs[0] = (BBInput){.move = 1.0f, .jump = true, .fire = true};
+    reference = game;
+    ticks = game.ticks;
+    bb_game_update(&game, inputs, 1.0f / 30.0f);
+    for(int step = 0; step < 4; ++step)
+    {
+        BBInput once[BB_MAX_PLAYERS] = {{.move = 1.0f, .jump = step == 0, .fire = step == 0}};
+        bb_game_update(&reference, once, BB_FIXED_DT);
+    }
+    CHECK(game.ticks == ticks + 1 && reference.ticks == ticks + 4);
+    CHECK(game.events.jump && game.events.fire && active_bubbles(&game) == 1);
+    CHECK(fabsf(game.players[0].body.x - reference.players[0].body.x) < 0.0001f);
+    CHECK(fabsf(game.players[0].body.y - reference.players[0].body.y) < 0.0001f);
+    CHECK(game.players[0].body.vx == reference.players[0].body.vx);
+    CHECK(game.players[0].body.vy == reference.players[0].body.vy && game.rng == reference.rng);
+
+    /* 첫 소단계에서는 공중이고 발사 대기도 남아 있다. 뒤 소단계에서 착지하거나
+     * 대기가 끝나더라도 이미 소비한 눌림 입력으로 점프/발사를 뒤늦게 해서는 안 된다. */
+    fixture(&game);
+    bb_game_resize(&game, BB_WORLD_MAX_WIDTH, BB_MAP_HEIGHT);
+    isolate_physics(&game);
+    game.players[0].body = (BBBody){.x = 100.0f, .y = 25.015f};
+    game.players[0].falling = true;
+    game.players[0].fire_cooldown = 2.0f * BB_FIXED_DT;
+    set_energy_phase(&game.players[0], true, 1.0);
+    ticks = game.ticks;
+    bb_game_update(&game, inputs, 1.0f / 30.0f);
+    CHECK(game.ticks == ticks + 1 && game.players[0].body.grounded);
+    CHECK(fabsf(game.players[0].body.y - 25.025f) < 0.0001f);
+    CHECK(!game.events.jump && !game.events.fire && active_bubbles(&game) == 0);
+}
+
+/* 넓은 맵의 이동만 검사할 때는 소멸 주기를 멀리 미뤄 다른 규칙과 분리한다. */
+static void hold_test_platforms(BBGame *game)
+{
+    for(int i = 0; i < game->platform_count; ++i)
+    {
+        game->platforms[i].state = BB_PLATFORM_SOLID;
+        game->platforms[i].state_time = 0.0;
+        game->platforms[i].solid_duration = 1000.0f;
+        game->platforms[i].vanished = false;
+    }
+}
+
+/* 배열 순서에 의존하지 않고 해당 기준 타일을 포함하는 발판을 찾는다. */
+static BBMovingPlatform *test_platform_at(BBGame *game, int x, int y)
+{
+    BBMovingPlatform *found = NULL;
+    for(int i = 0; i < game->platform_count; ++i)
+        if(game->platforms[i].y == y && x >= game->platforms[i].x &&
+           x < game->platforms[i].x + game->platforms[i].width)
+            found = &game->platforms[i];
+    CHECK(found != NULL);
+    return found;
+}
+
+/* 원래 위치에서 열두 칸 이동한 발판의 새 위치에만 착지하고, 플레이어/적/음식
+ * 각각이 같은 발판의 실제 한 틱 이동량을 따라야 한다. 옛 위치는 빈 공간이다. */
+static void test_far_platform_landing_and_riders(void)
+{
+    uint8_t maps[BB_LEVEL_COUNT][BB_MAP_HEIGHT][BB_MAP_WIDTH];
+    BBGame game;
+    bb_levels_build(&maps[0][0][0]);
+    bb_game_init(&game, &maps[0][0][0], 17);
+    CHECK(bb_game_platform_travel(&game) == 1.0f);
+    bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+    CHECK(bb_game_platform_travel(&game) == 17.0f);
+    bb_game_start(&game, 2);
+    bb_game_skip_intro(&game);
+    isolate_physics(&game);
+    hold_test_platforms(&game);
+    BBMovingPlatform *platform = test_platform_at(&game, 19, 22);
+    platform->offset = 12.0f;
+    platform->step = 0.0f;
+    game.players[0].body = (BBBody){.x = 35.0f, .y = 22.0f - 0.975f - 0.01f};
+    game.players[1].body = (BBBody){.x = 21.0f, .y = 22.0f - 0.975f - 0.01f};
+    game.players[0].falling = game.players[1].falling = true;
+    game.pickups[0] = (BBPickup){.body = {.x = 38.0f, .y = 22.0f - 0.95f, .grounded = true},
+        .active = true, .type = BB_PICKUP_WATERMELON};
+    game.enemies[0] = (BBEnemy){.body = {.x = 39.0f, .y = 22.0f - 0.95f, .grounded = true},
+        .active = true, .type = BB_ENEMY_ZENCHAN, .state = BB_ENEMY_WALKING, .facing = 1};
+    tick(&game, 0.0f, false, false);
+    CHECK(game.players[0].body.grounded && !game.players[1].body.grounded);
+    CHECK(fabsf(game.players[0].body.y - (22.0f - 0.975f)) < 0.0001f);
+    CHECK(game.players[1].body.y > 22.0f - 0.975f);
+    float player_x = game.players[0].body.x;
+    float enemy_x = game.enemies[0].body.x;
+    float food_x = game.pickups[0].body.x;
+    tick(&game, 0.0f, false, false);
+    CHECK(game.players[0].body.grounded && game.enemies[0].body.grounded && game.pickups[0].body.grounded);
+    CHECK(fabsf(game.players[0].body.x - player_x - platform->step) < 0.0001f);
+    CHECK(fabsf(game.enemies[0].body.x - enemy_x - 6.0f * BB_FIXED_DT - platform->step) < 0.0001f);
+    CHECK(fabsf(game.pickups[0].body.x - food_x - platform->step) < 0.0001f);
+}
+
+/* 한 칸 검색 범위를 벗어난 발판도 거품의 짧은 레이캐스트와 AI 점프 목표에
+ * 반영되어야 한다. 좌우 이동과 원래 위치가 빈 경우를 모두 구분한다. */
+static void test_far_platform_raycast_and_ai(void)
+{
+    for(int direction = -1; direction <= 1; direction += 2)
+    {
+        for(int shifted = 0; shifted <= 1; ++shifted)
+        {
+            BBGame game;
+            fixture(&game);
+            game.maps[0][20][12] = 2;
+            restart_physics_fixture(&game);
+            bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+            isolate_physics(&game);
+            hold_test_platforms(&game);
+            BBMovingPlatform *platform = &game.platforms[0];
+            platform->offset = 12.0f * (float)direction;
+            platform->step = 0.0f;
+            platform->direction = direction;
+            float boundary = (float)platform->x + (direction > 0 ? 0.0f : 1.0f);
+            if(shifted) boundary += platform->offset;
+            game.players[0].body = (BBBody){.x = boundary - 3.0f * (float)direction, .y = 20.5f};
+            game.players[0].falling = true;
+            game.players[0].facing = direction;
+            tick(&game, 0.0f, false, true);
+            CHECK(game.events.fire && active_bubbles(&game) == 1);
+            if(shifted)
+            {
+                float actual = (float)platform->x + platform->offset + (direction > 0 ? 0.0f : 1.0f);
+                CHECK(fabsf(game.bubbles[0].body.x - (actual - 0.751f * (float)direction)) < 0.003f);
+                CHECK(fabsf(game.bubbles[0].body.vx) < 0.2f);
+            }
+            else
+                CHECK(game.bubbles[0].body.vx * (float)direction > 19.0f);
+
+            fixture(&game);
+            game.maps[0][22][12] = 2;
+            restart_physics_fixture(&game);
+            bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+            isolate_physics(&game);
+            hold_test_platforms(&game);
+            platform = &game.platforms[0];
+            platform->offset = 12.0f * (float)direction;
+            platform->step = 0.0f;
+            platform->direction = direction;
+            float enemy_x = (float)platform->x + 0.5f + (shifted ? platform->offset : 0.0f);
+            game.enemies[0] = (BBEnemy){.body = {.x = enemy_x, .y = 25.05f, .grounded = true},
+                .active = true, .type = BB_ENEMY_ZENCHAN, .state = BB_ENEMY_WALKING,
+                .facing = direction, .jump_timer = 2.0f};
+            game.players[0].body = (BBBody){.x = enemy_x + 2.0f * (float)direction, .y = 21.0f};
+            game.players[0].falling = true;
+            tick(&game, 0.0f, false, false);
+            CHECK(game.enemies[0].state == (shifted ? BB_ENEMY_JUMPING : BB_ENEMY_WALKING));
+        }
+    }
+}
+
+/* 공통 이동 범위가 넓어져도 각 발판의 끝은 양벽 안에 남아야 한다.
+ * 오른쪽 추가 발판은 +17 전체를 쓰면 벽을 침범하므로 +16에서 돌아선다. */
+static void test_wide_platform_wall_reversal(void)
+{
+    const int rates[] = {30, 60, 120};
+    for(unsigned r = 0; r < sizeof rates / sizeof rates[0]; ++r)
+    {
+        uint8_t maps[BB_LEVEL_COUNT][BB_MAP_HEIGHT][BB_MAP_WIDTH];
+        BBGame game;
+        bb_levels_build(&maps[0][0][0]);
+        for(int x = 20; x < 30; ++x) maps[0][20][x] = 2;
+        bb_game_init(&game, &maps[0][0][0], 17);
+        bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+        bb_game_start(&game, 1);
+        bb_game_skip_intro(&game);
+        isolate_physics(&game);
+        hold_test_platforms(&game);
+        BBMovingPlatform *left = test_platform_at(&game, 19, 22);
+        BBMovingPlatform *right = test_platform_at(&game, 36, 20);
+        left->offset = -16.999f;
+        left->direction = -1;
+        right->offset = 15.999f;
+        right->direction = 1;
+        float left_speed = left->speed;
+        float right_speed = right->speed;
+        bb_game_update(&game, NULL, 1.0f / (float)rates[r]);
+        CHECK(left->direction == 1 && right->direction == -1);
+        CHECK((float)left->x + left->offset >= 2.0f);
+        CHECK((float)right->x + (float)right->width + right->offset <= 62.0f);
+        float maximum_step = BB_PLATFORM_MAX_SPEED / (float)rates[r];
+        CHECK(left->offset < -17.0f + maximum_step + 0.001f);
+        CHECK(right->offset > 16.0f - maximum_step - 0.001f);
+        CHECK(left->speed == left_speed && right->speed == right_speed);
+    }
+}
+
+/* 폭 축소로 offset을 ±12에서 ±1로 제한할 때 탑승자는 같은 추가 보정을
+ * 받아야 한다. 공중 물체는 원점 이동만 받고 다음 틱에는 정상 step만 더한다. */
+static void test_shrinking_far_platform_riders(void)
+{
+    for(int direction = -1; direction <= 1; direction += 2)
+    {
+        uint8_t maps[BB_LEVEL_COUNT][BB_MAP_HEIGHT][BB_MAP_WIDTH];
+        BBGame game;
+        bb_levels_build(&maps[0][0][0]);
+        bb_game_init(&game, &maps[0][0][0], 17);
+        bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+        bb_game_start(&game, 2);
+        bb_game_skip_intro(&game);
+        isolate_physics(&game);
+        hold_test_platforms(&game);
+        BBMovingPlatform *platform = test_platform_at(&game, 19, 22);
+        platform->offset = 12.0f * (float)direction;
+        platform->step = 0.009f * (float)direction;
+        platform->direction = direction;
+        float left = (float)platform->x + platform->offset;
+        game.players[0].body = (BBBody){.x = left + 3.0f, .y = 21.025f, .grounded = true};
+        game.players[1].body = (BBBody){.x = left + 3.0f, .y = 19.0f};
+        game.players[1].falling = true;
+        game.enemies[0] = (BBEnemy){.body = {.x = left + 7.0f, .y = 21.05f, .grounded = true},
+            .active = true, .type = BB_ENEMY_ZENCHAN, .state = BB_ENEMY_WALKING, .facing = 1};
+        game.boulders[0] = (BBBoulder){.body = {.x = left + 5.0f, .y = 21.25f, .grounded = true}, .active = true};
+        game.pickups[0] = (BBPickup){.body = {.x = left + 8.5f, .y = 21.05f, .grounded = true},
+            .active = true, .type = BB_PICKUP_WATERMELON};
+        game.bubbles[0] = (BBBubble){.body = {.x = left + 3.0f, .y = 16.0f},
+            .active = true, .captured_enemy = -1};
+        float speed = platform->speed;
+        uint32_t rng = game.rng;
+        bb_game_resize(&game, BB_MAP_WIDTH, BB_MAP_HEIGHT);
+        CHECK(platform->offset == (float)direction && platform->speed == speed);
+        CHECK(game.rng == rng && bb_game_platform_travel(&game) == 1.0f);
+        float player_x = 6.0f + (float)direction;
+        float enemy_x = 10.0f + (float)direction;
+        float boulder_x = 8.0f + (float)direction;
+        float food_x = 11.5f + (float)direction;
+        CHECK(fabsf(game.players[0].body.x - player_x) < 0.0001f && game.players[0].body.grounded);
+        CHECK(fabsf(game.enemies[0].body.x - enemy_x) < 0.0001f);
+        CHECK(fabsf(game.boulders[0].body.x - boulder_x) < 0.0001f);
+        CHECK(fabsf(game.pickups[0].body.x - food_x) < 0.0001f);
+        float airborne_x = direction < 0 ? 2.9f : 18.0f;
+        float bubble_x = direction < 0 ? 2.75f : 18.0f;
+        CHECK(fabsf(game.players[1].body.x - airborne_x) < 0.0001f && !game.players[1].body.grounded);
+        CHECK(fabsf(game.bubbles[0].body.x - bubble_x) < 0.0001f);
+        bb_game_resize(&game, BB_MAP_WIDTH, BB_MAP_HEIGHT);
+        CHECK(fabsf(game.players[0].body.x - player_x) < 0.0001f);
+        tick(&game, 0.0f, false, false);
+        CHECK(game.players[0].body.grounded);
+        CHECK(fabsf(game.players[0].body.x - player_x - platform->step) < 0.0001f);
+        CHECK(fabsf(game.enemies[0].body.x - enemy_x - 6.0f * BB_FIXED_DT - platform->step) < 0.0001f);
+        CHECK(fabsf(game.boulders[0].body.x - boulder_x - platform->step) < 0.0001f);
+        CHECK(fabsf(game.pickups[0].body.x - food_x - platform->step) < 0.0001f);
+        CHECK(fabsf(game.players[1].body.x - airborne_x) < 0.0001f);
+    }
+}
+
+/* 실제 마지막 피격과 1.5초 사망 연출을 거쳐 구조 대기 상태를 만든다.
+ * 동료는 떨어뜨려 두고 공통 대기 적으로 자동 클리어를 막는다. */
+static void rescue_fixture_seed(BBGame *game, int waiting, bool full_pool, uint32_t seed)
+{
+    fixture_mode(game, 2);
+    game->players[waiting].lives = 1;
+    game->players[waiting].score = 1234;
+    set_energy_phase(&game->players[waiting], true, 1.0);
+    game->players[waiting].body = (BBBody){.x = 12.0f, .y = 18.0f};
+    game->players[waiting].falling = true;
+    game->players[1 - waiting].body = (BBBody){.x = 26.0f, .y = 25.025f, .grounded = true};
+    if(full_pool)
+        for(int i = 0; i < BB_MAX_BUBBLES; ++i)
+            game->bubbles[i] = (BBBubble){.body = {.x = 16.0f, .y = 4.0f},
+                .active = true, .owner = waiting, .captured_enemy = -1};
+    game->rng = seed;
+    collide_enemy_with_player(game, waiting);
+    CHECK(game->players[waiting].lives == 0 && game->players[waiting].state == BB_PLAYER_DEAD);
+    wait_ticks(game, 170);
+    CHECK(game->players[waiting].state == BB_PLAYER_DEAD);
+    for(int ticks = 0; ticks < 20 && game->players[waiting].state == BB_PLAYER_DEAD; ++ticks)
+        tick(game, 0.0f, false, false);
+    CHECK(game->players[waiting].state == BB_PLAYER_BUBBLE && game->players[waiting].lives == 0);
+    CHECK(game->players[waiting].rescue_time_left == BB_RESCUE_BUBBLE_SECONDS);
+    CHECK(game->state == BB_STATE_PLAY);
+}
+
+/* 난수 자체를 비교하지 않는 구조 시험은 같은 시드를 사용해 출발 조건을 맞춘다.
+ * waiting은 구조를 기다릴 플레이어 번호이고, full_pool은 일반 버블 포화 여부다. */
+static void rescue_fixture(BBGame *game, int waiting, bool full_pool)
+{
+    rescue_fixture_seed(game, waiting, full_pool, UINT32_C(1234567));
+}
+
+/* 일반 버블 배열이 가득 차도 구조 버블은 생성된다. 10초 구조 기회 동안
+ * 조작·마나·음식은 정지하며, 만료된 뒤에는 해당 라운드에서 부활할 수 없다. */
+static void test_rescue_bubble_lifetime_and_capacity(void)
+{
+    for(int waiting = 0; waiting < BB_MAX_PLAYERS; ++waiting)
+    {
+        BBGame game;
+        rescue_fixture(&game, waiting, true);
+        CHECK(active_bubbles(&game) == BB_MAX_BUBBLES);
+        float energy = game.players[waiting].energy;
+        double elapsed = game.players[waiting].energy_elapsed;
+        game.players[1 - waiting].state = BB_PLAYER_DEAD;
+        game.players[1 - waiting].death_timer = 60.0f;
+        BBInput inputs[BB_MAX_PLAYERS] = {{0}};
+        inputs[waiting] = (BBInput){.move = 1.0f, .jump = true, .fire = true};
+        game.pickups[0] = (BBPickup){.body = game.players[waiting].body,
+            .active = true, .type = BB_PICKUP_FRIES};
+        for(int step = 0; step < 1080; ++step)
+        {
+            bb_game_update(&game, inputs, BB_FIXED_DT);
+            CHECK(game.players[waiting].state == BB_PLAYER_BUBBLE && game.players[waiting].lives == 0);
+            CHECK(game.players[waiting].energy == energy && game.players[waiting].energy_elapsed == elapsed);
+            CHECK(!game.events.jump && !game.events.fire);
+            const BBBody *body = &game.players[waiting].body;
+            CHECK(isfinite(body->vx) && isfinite(body->vy) && !body->grounded);
+            CHECK(body->x >= 2.0f + BB_RESCUE_BUBBLE_RADIUS);
+            CHECK(body->x <= BB_MAP_WIDTH - 2.0f - BB_RESCUE_BUBBLE_RADIUS);
+            CHECK(body->y >= 5.5f && body->y <= BB_MAP_HEIGHT - 3.5f);
+        }
+        CHECK(game.players[waiting].score == 1234);
+        CHECK(game.state == BB_STATE_PLAY && active_bubbles(&game) == 0);
+        wait_ticks(&game, 120);
+        CHECK(game.players[waiting].state == BB_PLAYER_WAIT_ROUND && game.players[waiting].lives == 0);
+        CHECK(game.players[waiting].rescue_time_left == 0.0);
+        CHECK(game.players[waiting].body.vx == 0.0f && game.players[waiting].body.vy == 0.0f);
+        BBBody expired_position = game.players[waiting].body;
+        game.players[1 - waiting].state = BB_PLAYER_NORMAL;
+        game.players[1 - waiting].body = expired_position;
+        game.players[1 - waiting].falling = true;
+        game.players[1 - waiting].invulnerable = 100.0f;
+        game.bubbles[0] = (BBBubble){.body = expired_position, .active = true,
+            .owner = 1 - waiting, .captured_enemy = -1, .age = 0.5f};
+        for(int step = 0; step < 120; ++step)
+        {
+            bb_game_update(&game, inputs, BB_FIXED_DT);
+            CHECK(game.players[waiting].state == BB_PLAYER_WAIT_ROUND && game.players[waiting].lives == 0);
+            CHECK(game.players[waiting].body.x == expired_position.x && game.players[waiting].body.y == expired_position.y);
+            CHECK(game.players[waiting].energy == energy && game.players[waiting].energy_elapsed == elapsed);
+            CHECK(game.players[waiting].score == 1234 && !game.events.fire && !game.events.jump);
+        }
+    }
+}
+
+/* 같은 시드의 경로는 재현되지만 다른 시드는 다른 경로를 만든다.
+ * 살아 있는 동료의 위치를 바꿔도 버블 경로는 같아 추적하지 않음을 확인한다. */
+static void test_rescue_bubble_random_motion(void)
+{
+    for(int waiting = 0; waiting < BB_MAX_PLAYERS; ++waiting)
+    {
+        BBGame a, b, different;
+        rescue_fixture_seed(&a, waiting, false, UINT32_C(17));
+        rescue_fixture_seed(&different, waiting, false, UINT32_C(9321));
+        bb_game_resize(&a, 64, 64);
+        bb_game_resize(&different, 64, 64);
+        a.players[waiting].body = different.players[waiting].body = (BBBody){.x = 32.0f, .y = 44.0f};
+        a.players[1 - waiting].body = different.players[1 - waiting].body =
+            (BBBody){.x = 4.0f, .y = 61.025f, .grounded = true};
+        b = a;
+        b.players[1 - waiting].body.x = 60.0f;
+        /* 부활 버블의 경로 위에 내부 벽을 놓아 일반 몸체 충돌과도 분리한다. */
+        for(int y = 0; y < BB_MAP_HEIGHT - 2; ++y)
+            for(int x = 2; x < BB_MAP_WIDTH - 2; ++x)
+                b.maps[b.level][y][x] = 3;
+        float min_x = 32.0f, max_x = 32.0f, min_y = 44.0f, max_y = 44.0f;
+        bool different_path = false;
+        for(int step = 0; step < 720; ++step)
+        {
+            tick(&a, 0.0f, false, false);
+            tick(&b, 0.0f, false, false);
+            tick(&different, 0.0f, false, false);
+            CHECK(a.players[waiting].state == BB_PLAYER_BUBBLE && b.players[waiting].state == BB_PLAYER_BUBBLE);
+            CHECK(different.players[waiting].state == BB_PLAYER_BUBBLE);
+            const BBBody *body = &a.players[waiting].body;
+            const BBBody *other = &b.players[waiting].body;
+            CHECK(body->x == other->x && body->y == other->y);
+            CHECK(body->vx == other->vx && body->vy == other->vy);
+            CHECK(a.players[waiting].rescue_rng == b.players[waiting].rescue_rng);
+            min_x = fminf(min_x, body->x); max_x = fmaxf(max_x, body->x);
+            min_y = fminf(min_y, body->y); max_y = fmaxf(max_y, body->y);
+            different_path = different_path || fabsf(body->x - different.players[waiting].body.x) > 0.1f ||
+                             fabsf(body->y - different.players[waiting].body.y) > 0.1f;
+        }
+        CHECK(different_path);
+        CHECK(max_x - min_x > 1.0f && max_y - min_y > 1.0f);
+    }
+}
+
+/* 갱신률이 달라도 거의 같은 경로를 이동하고 생성 후 10초에 정확히 만료된다.
+ * 화면 변경은 위치만 옮기며 속도와 남은 구조 시간을 초기화하지 않는다. */
+static void test_rescue_bubble_rates_and_bounds(void)
+{
+    const int rates[] = {30, 60, 120};
+    BBBody endpoints[3];
+    for(int waiting = 0; waiting < BB_MAX_PLAYERS; ++waiting)
+    {
+        for(int rate = 0; rate < 3; ++rate)
+        {
+            BBGame game;
+            rescue_fixture(&game, waiting, false);
+            game.players[1 - waiting].state = BB_PLAYER_DEAD;
+            game.players[1 - waiting].death_timer = 60.0f;
+            float dt = 1.0f / (float)rates[rate];
+            for(int frame = 0; frame < rates[rate] * 10 - 1; ++frame)
+            {
+                bb_game_update(&game, NULL, dt);
+                CHECK(game.players[waiting].state == BB_PLAYER_BUBBLE);
+                CHECK(game.players[waiting].rescue_time_left > 0.0);
+                if(frame == rates[rate] * 2 - 1)
+                    endpoints[rate] = game.players[waiting].body;
+            }
+            CHECK(fabs(game.players[waiting].rescue_time_left - dt) < 0.00001);
+            bb_game_update(&game, NULL, dt);
+            CHECK(game.players[waiting].state == BB_PLAYER_WAIT_ROUND && game.players[waiting].rescue_time_left == 0.0);
+            CHECK(game.state == BB_STATE_PLAY);
+        }
+        for(int rate = 0; rate < 2; ++rate)
+        {
+            CHECK(fabsf(endpoints[rate].x - endpoints[2].x) < 0.2f);
+            CHECK(fabsf(endpoints[rate].y - endpoints[2].y) < 0.2f);
+        }
+    }
+
+    BBGame game;
+    rescue_fixture(&game, 0, false);
+    wait_ticks(&game, 120);
+    BBBody before_resize = game.players[0].body;
+    double remaining = game.players[0].rescue_time_left;
+    bb_game_resize(&game, 64, 40);
+    CHECK(game.players[0].body.vx == before_resize.vx && game.players[0].body.vy == before_resize.vy);
+    CHECK(fabsf(game.players[0].body.x - before_resize.x - 16.0f) < 0.0001f);
+    CHECK(fabsf(game.players[0].body.y - before_resize.y - 12.0f) < 0.0001f);
+    CHECK(game.players[0].rescue_time_left == remaining);
+    bb_game_resize(&game, BB_MAP_WIDTH, BB_MAP_HEIGHT);
+    CHECK(game.players[0].body.vx == before_resize.vx && game.players[0].body.vy == before_resize.vy);
+    CHECK(game.players[0].rescue_time_left == remaining);
+    for(int corner = 0; corner < 4; ++corner)
+    {
+        rescue_fixture(&game, 0, false);
+        game.players[1].state = BB_PLAYER_DEAD;
+        game.players[1].death_timer = 60.0f;
+        game.players[0].body = (BBBody){
+            .x = corner % 2 ? BB_MAP_WIDTH - 2.0f - BB_RESCUE_BUBBLE_RADIUS : 2.0f + BB_RESCUE_BUBBLE_RADIUS,
+            .y = corner / 2 ? BB_MAP_HEIGHT - 3.5f : 5.5f,
+            .vx = corner % 2 ? 3.0f : -3.0f,
+            .vy = corner / 2 ? 3.0f : -3.0f};
+        for(int step = 0; step < 720; ++step)
+        {
+            tick(&game, 0.0f, false, false);
+            const BBBody *body = &game.players[0].body;
+            CHECK(game.players[0].state == BB_PLAYER_BUBBLE);
+            CHECK(body->x >= 2.0f + BB_RESCUE_BUBBLE_RADIUS);
+            CHECK(body->x <= BB_MAP_WIDTH - 2.0f - BB_RESCUE_BUBBLE_RADIUS);
+            CHECK(body->y >= 5.5f && body->y <= BB_MAP_HEIGHT - 3.5f);
+            if(step == 0)
+            {
+                CHECK((corner % 2 ? -body->vx : body->vx) >= 0.0f);
+                CHECK((corner / 2 ? -body->vy : body->vy) >= 0.0f);
+            }
+        }
+    }
+}
+
+/* 동료 접촉은 두 플레이어 모두 구조할 수 있다. 그 자리에서 한 목숨과
+ * 3초 무적을 얻고, 점수/마나를 보존하며 뒤따르는 적/바위 피해도 막는다. */
+static void test_teammate_contact_rescue(void)
+{
+    for(int waiting = 0; waiting < BB_MAX_PLAYERS; ++waiting)
+    {
+        BBGame game;
+        rescue_fixture(&game, waiting, false);
+        int teammate = 1 - waiting;
+        float energy = game.players[waiting].energy;
+        double elapsed = game.players[waiting].energy_elapsed;
+        BBBody position = game.players[waiting].body;
+        game.players[teammate].body = (BBBody){.x = position.x + 2.0f, .y = position.y};
+        game.players[teammate].falling = true;
+        tick(&game, 0.0f, false, false);
+        CHECK(game.players[waiting].state == BB_PLAYER_NORMAL && game.players[waiting].lives == 1);
+        CHECK(game.players[waiting].invulnerable > 2.99f && game.players[waiting].rescue_pop_timer > 0.24f);
+        CHECK(game.events.pop && !game.events.death);
+        CHECK(fabsf(game.players[waiting].body.x - position.x) < 0.05f &&
+              fabsf(game.players[waiting].body.y - position.y) < 0.05f);
+        CHECK(game.players[waiting].body.vy == 0.0f && game.players[waiting].falling && game.players[waiting].air_control);
+        CHECK(game.players[waiting].score == 1234 && game.players[waiting].energy == energy);
+        CHECK(game.players[waiting].energy_elapsed == elapsed);
+        game.enemies[0] = (BBEnemy){.body = game.players[waiting].body, .active = true,
+            .state = BB_ENEMY_WALKING, .type = BB_ENEMY_ZENCHAN, .facing = 1};
+        game.boulders[0] = (BBBoulder){.body = game.players[waiting].body, .active = true};
+        wait_ticks(&game, 32);
+        CHECK(game.players[waiting].state == BB_PLAYER_NORMAL && game.players[waiting].lives == 1);
+        CHECK(game.players[waiting].rescue_pop_timer == 0.0f && game.players[waiting].invulnerable > 2.7f);
+    }
+}
+
+/* 동료가 쏜 빈 일반 버블은 구조 후 파열한다. 같은 위치의 몬스터를
+ * 먼저 포획해 구조 기회를 빼앗지 않도록 구조가 일반 포획보다 앞서야 한다. */
+static void test_teammate_projectile_rescue(void)
+{
+    for(int waiting = 0; waiting < BB_MAX_PLAYERS; ++waiting)
+    {
+        BBGame game;
+        rescue_fixture(&game, waiting, false);
+        game.bubbles[0] = (BBBubble){.body = game.players[waiting].body, .active = true,
+            .owner = 1 - waiting, .captured_enemy = -1, .age = 0.5f};
+        game.enemies[0] = (BBEnemy){.body = game.players[waiting].body, .active = true,
+            .state = BB_ENEMY_WALKING, .type = BB_ENEMY_ZENCHAN, .facing = 1};
+        tick(&game, 0.0f, false, false);
+        CHECK(game.players[waiting].state == BB_PLAYER_NORMAL && game.players[waiting].lives == 1);
+        CHECK(game.players[waiting].invulnerable > 2.99f && game.events.pop);
+        CHECK(game.bubbles[0].active && game.bubbles[0].popping && !game.bubbles[0].releasing);
+        CHECK(game.bubbles[0].captured_enemy == -1 && game.enemies[0].state != BB_ENEMY_CAPTURED);
+    }
+}
+
+/* 자기 버블/포획 버블/파열 중/비활성/잘못된 소유자는 구조에 쓰지 않는다.
+ * 살아 있던 동료의 과거 발사라도 그 동료가 사망 대기 중이면 구조할 수 없다. */
+static void test_invalid_rescue_projectiles(void)
+{
+    for(int invalid = 0; invalid < 6; ++invalid)
+    {
+        BBGame game;
+        rescue_fixture(&game, 0, false);
+        game.bubbles[0] = (BBBubble){.body = game.players[0].body, .active = true,
+            .owner = 1, .captured_enemy = -1, .age = 0.5f};
+        if(invalid == 0) game.bubbles[0].owner = 0;
+        if(invalid == 1)
+        {
+            game.bubbles[0].captured_enemy = 0;
+            game.enemies[0] = (BBEnemy){.active = true, .state = BB_ENEMY_CAPTURED};
+        }
+        if(invalid == 2) { game.bubbles[0].popping = true; game.bubbles[0].pop_timer = 0.2f; }
+        if(invalid == 3) game.bubbles[0].active = false;
+        if(invalid == 4) game.bubbles[0].owner = INT_MAX;
+        if(invalid == 5)
+        {
+            game.players[1].state = BB_PLAYER_DEAD;
+            game.players[1].lives = 1;
+            game.players[1].death_timer = 5.0f;
+        }
+        tick(&game, 0.0f, false, false);
+        CHECK(game.players[0].state == BB_PLAYER_BUBBLE && game.players[0].lives == 0);
+        CHECK(game.state == BB_STATE_PLAY);
+    }
+}
+
+/* 동료가 자동 부활할 목숨이 있으면 구조 대기를 유지한다. 두 사람 모두
+ * 목숨을 잃으면 사망 연출이 끝난 뒤만 종료하며, 구조와 피격이 겹치면 구조가 먼저다. */
+static void test_rescue_game_over_and_collision_order(void)
+{
+    BBGame game;
+    rescue_fixture(&game, 0, false);
+    game.players[1].state = BB_PLAYER_DEAD;
+    game.players[1].lives = 1;
+    game.players[1].death_timer = 0.02f;
+    tick(&game, 0.0f, false, false);
+    CHECK(game.state == BB_STATE_PLAY && game.players[0].state == BB_PLAYER_BUBBLE);
+    wait_ticks(&game, 4);
+    CHECK(game.players[1].state == BB_PLAYER_NORMAL && game.players[0].state == BB_PLAYER_BUBBLE);
+
+    fixture_mode(&game, 2);
+    for(int p = 0; p < BB_MAX_PLAYERS; ++p)
+    {
+        game.players[p].state = BB_PLAYER_DEAD;
+        game.players[p].lives = 0;
+        game.players[p].death_timer = 0.02f;
+    }
+    tick(&game, 0.0f, false, false);
+    CHECK(game.state == BB_STATE_PLAY);
+    wait_ticks(&game, 4);
+    CHECK(game.state == BB_STATE_SCORE && !game.won);
+    CHECK(game.players[0].state == BB_PLAYER_OUT && game.players[1].state == BB_PLAYER_OUT);
+
+    rescue_fixture(&game, 0, false);
+    game.players[1].body = game.players[0].body;
+    game.players[1].falling = true;
+    game.players[1].lives = 1;
+    game.players[1].invulnerable = 0.0f;
+    game.enemies[0] = (BBEnemy){.body = game.players[0].body, .active = true,
+        .state = BB_ENEMY_WALKING, .type = BB_ENEMY_ZENCHAN, .facing = 1};
+    tick(&game, 0.0f, false, false);
+    CHECK(game.players[0].state == BB_PLAYER_NORMAL && game.players[0].lives == 1);
+    CHECK(game.players[1].state == BB_PLAYER_DEAD && game.players[1].lives == 0);
+    CHECK(game.events.pop && game.events.death && game.state == BB_STATE_PLAY);
+}
+
+/* 만료 틱의 접촉/발사체보다 시간 제한이 우선한다. 실패한 플레이어는
+ * 현재 라운드에서는 대기하고 다음 라운드 시작 때만 한 목숨으로 돌아온다. */
+static void test_rescue_timeout_and_next_round(void)
+{
+    for(int waiting = 0; waiting < BB_MAX_PLAYERS; ++waiting)
+    {
+        BBGame game;
+        rescue_fixture(&game, waiting, false);
+        game.players[waiting].rescue_time_left = (double)BB_FIXED_DT * 2.0;
+        game.players[1 - waiting].body = game.players[waiting].body;
+        game.players[1 - waiting].falling = true;
+        tick(&game, 0.0f, false, false);
+        CHECK(game.players[waiting].state == BB_PLAYER_NORMAL && game.players[waiting].lives == 1);
+        CHECK(game.players[waiting].rescue_time_left == 0.0 && game.events.pop);
+
+        rescue_fixture(&game, waiting, false);
+        game.players[waiting].rescue_time_left = BB_FIXED_DT;
+        game.players[1 - waiting].body = game.players[waiting].body;
+        game.players[1 - waiting].falling = true;
+        game.bubbles[0] = (BBBubble){.body = game.players[waiting].body, .active = true,
+            .owner = 1 - waiting, .captured_enemy = -1, .age = 0.5f};
+        tick(&game, 0.0f, false, false);
+        CHECK(game.players[waiting].state == BB_PLAYER_WAIT_ROUND && game.players[waiting].lives == 0);
+        CHECK(game.players[waiting].rescue_time_left == 0.0 && game.players[waiting].rescue_pop_timer == 0.0f);
+        wait_ticks(&game, 120);
+        CHECK(game.players[waiting].state == BB_PLAYER_WAIT_ROUND);
+        float energy = game.players[waiting].energy;
+        double elapsed = game.players[waiting].energy_elapsed;
+        int score = game.players[waiting].score;
+        memset(game.enemies, 0, sizeof game.enemies);
+        tick(&game, 0.0f, false, false);
+        CHECK(game.state == BB_STATE_CLEAR && game.players[waiting].state == BB_PLAYER_WAIT_ROUND);
+        game.state_time = 6.999f;
+        tick(&game, 0.0f, false, false);
+        CHECK(game.state == BB_STATE_PLAY && game.level == 1 && game.events.level);
+        CHECK(game.players[waiting].state == BB_PLAYER_NORMAL && game.players[waiting].lives == 1);
+        CHECK(game.players[waiting].invulnerable == 3.0f);
+        CHECK(game.players[waiting].body.x == (waiting == 0 ? 4.0f : 28.0f));
+        CHECK(game.players[waiting].energy == energy && game.players[waiting].energy_elapsed == elapsed);
+        CHECK(game.players[waiting].score == score);
+        CHECK(game.players[waiting].rescue_time_left == 0.0 && game.players[waiting].rescue_turn_timer == 0.0);
+        CHECK(game.players[waiting].rescue_drift_vx == 0.0f && game.players[waiting].rescue_drift_vy == 0.0f);
+        CHECK(game.players[waiting].rescue_rng == 0);
+
+        /* 구조 제한과 라운드 전환이 같은 틱이면 새 라운드에 바로 복귀한다. */
+        rescue_fixture(&game, waiting, false);
+        game.players[waiting].rescue_time_left = BB_FIXED_DT;
+        memset(game.enemies, 0, sizeof game.enemies);
+        game.state = BB_STATE_CLEAR;
+        game.state_time = 6.999f;
+        tick(&game, 0.0f, false, false);
+        CHECK(game.level == 1 && game.players[waiting].state == BB_PLAYER_NORMAL && game.players[waiting].lives == 1);
+
+        /* 다음 라운드를 기다리는 사람만 남았다고 패배를 막지 않는다. */
+        rescue_fixture(&game, waiting, false);
+        game.players[waiting].rescue_time_left = BB_FIXED_DT;
+        tick(&game, 0.0f, false, false);
+        CHECK(game.players[waiting].state == BB_PLAYER_WAIT_ROUND);
+        game.players[1 - waiting].state = BB_PLAYER_DEAD;
+        game.players[1 - waiting].lives = 0;
+        game.players[1 - waiting].death_timer = 0.02f;
+        wait_ticks(&game, 4);
+        CHECK(game.state == BB_STATE_SCORE && !game.won);
+        CHECK(game.players[0].state == BB_PLAYER_OUT && game.players[1].state == BB_PLAYER_OUT);
+    }
+}
+
+/* 라운드가 바뀌어도 구조 대기 위치와 기록을 유지하며, 크기 변경에서는
+ * 버블 반경으로 벽 안에 제한한다. 새 1인/2인 게임에서는 대기와 파열 연출을 지운다. */
+static void test_rescue_round_resize_and_reset(void)
+{
+    BBGame game;
+    rescue_fixture(&game, 0, false);
+    BBBody position = game.players[0].body;
+    float energy = game.players[0].energy;
+    double remaining = game.players[0].rescue_time_left;
+    const BBState frozen[] = {BB_STATE_MENU, BB_STATE_INTRO, BB_STATE_SCORE};
+    for(unsigned i = 0; i < sizeof frozen / sizeof frozen[0]; ++i)
+    {
+        game.state = frozen[i];
+        game.state_time = 0.0f;
+        wait_ticks(&game, 120);
+        CHECK(game.players[0].rescue_time_left == remaining);
+        CHECK(game.players[0].body.x == position.x && game.players[0].body.y == position.y);
+    }
+    game.state = BB_STATE_CLEAR;
+    game.state_time = 6.999f;
+    tick(&game, 0.0f, false, false);
+    CHECK(game.level == 1 && game.players[0].state == BB_PLAYER_BUBBLE && game.players[0].lives == 0);
+    CHECK(fabs(game.players[0].rescue_time_left - (remaining - BB_FIXED_DT)) < 0.000001);
+    CHECK(fabsf(game.players[0].body.x - position.x) < 0.05f &&
+          fabsf(game.players[0].body.y - position.y) < 0.05f);
+    CHECK(game.players[0].score == 1234 && game.players[0].energy == energy);
+    position = game.players[0].body;
+    bb_game_resize(&game, 64, 40);
+    CHECK(game.players[0].body.x == position.x + 16.0f);
+    CHECK(fabsf(game.players[0].body.y - position.y - 12.0f) < 0.0001f);
+    CHECK(game.players[0].state == BB_PLAYER_BUBBLE && game.players[0].lives == 0);
+    game.players[0].body.x = 4.0f;
+    bb_game_resize(&game, BB_MAP_WIDTH, BB_MAP_HEIGHT);
+    CHECK(game.players[0].body.x >= 2.0f + BB_RESCUE_BUBBLE_RADIUS);
+    CHECK(game.players[0].body.x <= BB_MAP_WIDTH - 2.0f - BB_RESCUE_BUBBLE_RADIUS);
+    for(int count = 1; count <= BB_MAX_PLAYERS; ++count)
+    {
+        game.players[0].rescue_pop_timer = 0.2f;
+        game.players[0].state = BB_PLAYER_WAIT_ROUND;
+        bb_game_start(&game, count);
+        for(int p = 0; p < BB_MAX_PLAYERS; ++p)
+        {
+            CHECK(game.players[p].state == BB_PLAYER_NORMAL && game.players[p].rescue_pop_timer == 0.0f);
+            CHECK(game.players[p].rescue_time_left == 0.0 && game.players[p].rescue_turn_timer == 0.0);
+            CHECK(game.players[p].rescue_drift_vx == 0.0f && game.players[p].rescue_drift_vy == 0.0f);
+            CHECK(game.players[p].rescue_rng == 0);
+            CHECK(game.players[p].lives == (p < count ? BB_STARTING_LIVES : 0));
+        }
+    }
+}
+
 /* 작은 물리/규칙 회귀 시험과 장기 재현성 시험을 모두 실행한다.
  * CHECK가 하나라도 실패하면 즉시 종료되므로 마지막 메시지는 모든 검사 통과를 뜻한다. */
 int main(void)
@@ -1365,6 +2547,29 @@ int main(void)
     test_player_modes_and_reset();
     test_shared_bubble_pool_exhaustion_and_reuse();
     test_finite_input_and_determinism();
+    test_world_resize_preserves_gameplay();
+    test_expanded_world_movement_and_wrap();
+    test_world_resize_limits_and_shrink();
+    test_player_width_speed();
+    test_width_resize_momentum();
+    test_max_width_swept_walls();
+    test_width_enemy_counts();
+    test_live_width_enemy_additions();
+    test_maximum_enemy_pickup_capacity();
+    test_max_width_substep_contacts();
+    test_far_platform_landing_and_riders();
+    test_far_platform_raycast_and_ai();
+    test_wide_platform_wall_reversal();
+    test_shrinking_far_platform_riders();
+    test_rescue_bubble_lifetime_and_capacity();
+    test_rescue_bubble_random_motion();
+    test_rescue_bubble_rates_and_bounds();
+    test_teammate_contact_rescue();
+    test_teammate_projectile_rescue();
+    test_invalid_rescue_projectiles();
+    test_rescue_game_over_and_collision_order();
+    test_rescue_timeout_and_next_round();
+    test_rescue_round_resize_and_reset();
     printf("Core regression tests passed (%d checks, 60000 deterministic stress ticks).\n", checks);
     return EXIT_SUCCESS;
 }

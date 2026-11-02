@@ -3,6 +3,7 @@
 
 #include "bb_game.h"
 
+/* 바닥을 제외한 라운드별 공중 발판 수다. */
 #define BB_LEVEL_PLATFORM_COUNT 5
 
 /* 연속된 BB_LEVEL_COUNT * BB_MAP_HEIGHT * BB_MAP_WIDTH 바이트를 채운다.

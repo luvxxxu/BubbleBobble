@@ -66,7 +66,7 @@ function(bb_configure_c_target target)
 endfunction()
 
 # 핵심 게임 상태는 그래픽 백엔드와 분리해 헤드리스 테스트에서도 사용한다.
-add_library(bb_core STATIC src/bb_game.c src/bb_levels.c)
+add_library(bb_core STATIC src/bb_game.c src/bb_levels.c src/bb_viewport.c)
 target_include_directories(bb_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 bb_configure_c_target(bb_core)
 # Unix 계열/MinGW의 수학 함수는 libm에서 링크한다. MSVC는 별도 libm이 필요 없다.
@@ -74,7 +74,7 @@ if(NOT MSVC)
     target_link_libraries(bb_core PUBLIC m)
 endif()
 
-# 테스트를 세 실행 파일로 분리해 규칙, 맵 구성, 파일 저장의 실패 위치를 구분한다.
+# 테스트를 분리해 게임 규칙, 맵 구성, 화면 배치, 파일 저장의 실패 위치를 구분한다.
 if(BUILD_TESTING)
     add_executable(bb_game_tests tests/test_game.c)
     target_link_libraries(bb_game_tests PRIVATE bb_core)
@@ -82,6 +82,9 @@ if(BUILD_TESTING)
     add_executable(bb_level_tests tests/test_levels.c)
     target_link_libraries(bb_level_tests PRIVATE bb_core)
     bb_configure_c_target(bb_level_tests)
+    add_executable(bb_viewport_tests tests/test_viewport.c)
+    target_link_libraries(bb_viewport_tests PRIVATE bb_core)
+    bb_configure_c_target(bb_viewport_tests)
     # 플랫폼 테스트에는 그래픽 라이브러리가 필요 없으므로 플랫폼 소스만 직접 포함한다.
     add_executable(bb_platform_tests tests/test_platform.c src/bb_platform.c)
     target_include_directories(bb_platform_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -95,7 +98,7 @@ if(BUILD_TESTING)
         target_compile_definitions(bb_platform_tests PRIVATE _POSIX_C_SOURCE=200809L)
     endif()
     # 테스트는 Release 구성에서도 assertion을 활성화한 채 유지해야 한다.
-    foreach(test_target bb_game_tests bb_level_tests bb_platform_tests)
+    foreach(test_target bb_game_tests bb_level_tests bb_platform_tests bb_viewport_tests)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE /UNDEBUG)
         else()
@@ -106,6 +109,7 @@ if(BUILD_TESTING)
     # 소스 폴더가 아닌 현재 빌드 폴더에 두어 여러 빌드가 서로 덮어쓰지 않게 한다.
     add_test(NAME gameplay COMMAND bb_game_tests)
     add_test(NAME level_layouts COMMAND bb_level_tests)
+    add_test(NAME viewport COMMAND bb_viewport_tests)
     add_test(NAME platform COMMAND bb_platform_tests "${CMAKE_CURRENT_BINARY_DIR}/platform-test-file.txt")
     # 실행 테스트와 별도로 소스 확장자를 감사해 C++ 파일의 유입을 감지한다.
     add_test(NAME pure_c_sources COMMAND "${CMAKE_COMMAND}"
