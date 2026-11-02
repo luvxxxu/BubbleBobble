@@ -831,13 +831,218 @@ static void test_pop_drop_and_score(void)
     game.players[0].body = game.pickups[0].body;
     game.players[0].body.vy = 0.0f;
     tick(&game, 0.0f, false, false);
-    CHECK(game.players[0].score == reward);
+    CHECK(game.players[0].score == reward + BB_ALL_PICKUPS_BONUS);
+    CHECK(game.round_pickups_collected == 1 && game.round_pickup_bonus_awarded);
     CHECK(active_pickups(&game) == 0);
     CHECK(game.events.pickup);
 
     game.pickups[0] = (BBPickup){ .body = game.players[0].body, .type = BB_PICKUP_FRIES, .active = true };
     tick(&game, 0.0f, false, false);
-    CHECK(game.players[0].score == reward + bb_game_pickup_score(BB_PICKUP_FRIES));
+    CHECK(game.players[0].score == reward + BB_ALL_PICKUPS_BONUS + bb_game_pickup_score(BB_PICKUP_FRIES));
+    CHECK(game.round_pickups_collected == 2 && game.round_pickup_bonus_awarded);
+}
+
+/* 보너스 시험에서 쓸 한두 마리의 처치된 적을 준비한다. 다음 틱에 실제 적 갱신
+ * 경로가 음식을 만들도록 하며, 플레이어는 음식과 떨어진 바닥에서 출발한다. */
+static void pickup_bonus_fixture(BBGame *game, int player_count, int enemy_count)
+{
+    fixture_mode(game, player_count);
+    memset(game->enemies, 0, sizeof game->enemies);
+    game->round_enemy_quota = enemy_count;
+    for(int i = 0; i < enemy_count; ++i)
+        game->enemies[i] = (BBEnemy){.body = {.x = 10.0f + (float)i * 12.0f, .y = 10.0f},
+            .active = true, .state = BB_ENEMY_DEAD, .bounces = 4};
+}
+
+/* 위치만 겹친 뒤 실제 충돌 처리로 지정한 음식을 수집한다. */
+static void collect_test_pickup(BBGame *game, int player, int pickup)
+{
+    CHECK(game->pickups[pickup].active);
+    game->players[player].body = game->pickups[pickup].body;
+    game->players[player].body.vx = 0.0f;
+    game->players[player].body.vy = 0.0f;
+    tick(game, 0.0f, false, false);
+    CHECK(!game->pickups[pickup].active);
+    CHECK(game->events.pickup);
+}
+
+/* 두 사람이 나눠 먹어도 라운드 전체 수집을 합산한다. 마지막 수집자가 누구든
+ * 일반 음식 점수에 500점이 더해지며, 먼저 먹은 사람의 점수는 그대로다. */
+static void test_round_pickup_bonus_cooperation(void)
+{
+    for(int last = 0; last < BB_MAX_PLAYERS; ++last)
+    {
+        BBGame game;
+        pickup_bonus_fixture(&game, 2, 2);
+        tick(&game, 0.0f, false, false);
+        CHECK(active_pickups(&game) == 2);
+        int first_reward = bb_game_pickup_score(game.pickups[0].type);
+        int last_reward = bb_game_pickup_score(game.pickups[1].type);
+        collect_test_pickup(&game, 1 - last, 0);
+        CHECK(game.players[1 - last].score == first_reward);
+        CHECK(game.players[last].score == 0);
+        CHECK(game.round_pickups_collected == 1 && !game.round_pickup_bonus_awarded);
+        collect_test_pickup(&game, last, 1);
+        CHECK(game.players[1 - last].score == first_reward);
+        CHECK(game.players[last].score == last_reward + 500);
+        CHECK(game.round_pickups_collected == 2 && game.round_pickup_bonus_awarded);
+        wait_ticks(&game, 120);
+        CHECK(game.players[last].score == last_reward + 500);
+        CHECK(game.players[1 - last].score == first_reward);
+    }
+}
+
+/* 현재 보이는 음식을 모두 먹었어도 아직 음식으로 바뀌지 않은 적이 있으면
+ * 기다린다. 살아 있는 적이 남은 비정상적인 수집 수에서도 보너스를 주지 않는다. */
+static void test_round_pickup_bonus_pending_enemies(void)
+{
+    BBGame game;
+    pickup_bonus_fixture(&game, 1, 2);
+    game.enemies[1].bounces = 0;
+    tick(&game, 0.0f, false, false);
+    CHECK(bb_game_enemies_left(&game) == 0 && active_pickups(&game) == 1);
+    int reward = bb_game_pickup_score(game.pickups[0].type);
+    collect_test_pickup(&game, 0, 0);
+    CHECK(active_pickups(&game) == 0 && game.enemies[1].active);
+    CHECK(game.round_pickups_collected == 1 && !game.round_pickup_bonus_awarded);
+    CHECK(game.players[0].score == reward);
+    game.enemies[1].bounces = 4;
+    tick(&game, 0.0f, false, false);
+    CHECK(active_pickups(&game) == 1);
+    reward += bb_game_pickup_score(game.pickups[0].type);
+    collect_test_pickup(&game, 0, 0);
+    CHECK(game.round_pickups_collected == 2 && game.round_pickup_bonus_awarded);
+    CHECK(game.players[0].score == reward + 500);
+
+    fixture(&game);
+    game.pickups[0] = (BBPickup){.body = game.players[0].body,
+        .type = BB_PICKUP_BANANA, .active = true};
+    collect_test_pickup(&game, 0, 0);
+    CHECK(game.round_pickups_collected == game.round_enemy_quota);
+    CHECK(bb_game_enemies_left(&game) == 1 && !game.round_pickup_bonus_awarded);
+    CHECK(game.players[0].score == bb_game_pickup_score(BB_PICKUP_BANANA));
+}
+
+/* 시간이 지나 사라진 음식은 수집한 것이 아니다. 화면의 음식이 모두 사라지거나
+ * 처음부터 음식이 없어도 점수를 주지 않으며, 빈 라운드는 보너스 대상이 아니다. */
+static void test_round_pickup_bonus_missing_food(void)
+{
+    BBGame game;
+    pickup_bonus_fixture(&game, 1, 2);
+    tick(&game, 0.0f, false, false);
+    game.pickups[0].age = 10.0f;
+    tick(&game, 0.0f, false, false);
+    CHECK(!game.pickups[0].active && game.round_pickups_collected == 0);
+    int reward = bb_game_pickup_score(game.pickups[1].type);
+    collect_test_pickup(&game, 0, 1);
+    CHECK(active_pickups(&game) == 0);
+    CHECK(game.round_pickups_collected == 1 && !game.round_pickup_bonus_awarded);
+    wait_ticks(&game, 120);
+    CHECK(game.players[0].score == reward && !game.round_pickup_bonus_awarded);
+
+    fixture(&game);
+    memset(game.enemies, 0, sizeof game.enemies);
+    wait_ticks(&game, 120);
+    CHECK(game.round_pickups_collected == 0 && !game.round_pickup_bonus_awarded);
+    CHECK(game.players[0].score == 0 && active_pickups(&game) == 0);
+    game.round_enemy_quota = 0;
+    game.pickups[0] = (BBPickup){.body = game.players[0].body,
+        .type = BB_PICKUP_BANANA, .active = true};
+    collect_test_pickup(&game, 0, 0);
+    CHECK(!game.round_pickup_bonus_awarded);
+    CHECK(game.players[0].score == bb_game_pickup_score(BB_PICKUP_BANANA));
+}
+
+/* 마지막 적이 음식으로 바뀌는 틱에도 수집할 수 있다. 보너스 지급 기록은 화면
+ * 크기 변경 중 유지하고, 다음 라운드에서는 점수만 남긴 뒤 수집 기록을 지운다. */
+static void test_round_pickup_bonus_transitions(void)
+{
+    BBGame game;
+    pickup_bonus_fixture(&game, 1, 1);
+    game.players[0].body = game.enemies[0].body;
+    CHECK(game.state == BB_STATE_PLAY);
+    tick(&game, 0.0f, false, false);
+    CHECK(game.state == BB_STATE_CLEAR && game.events.pickup);
+    CHECK(game.round_pickups_collected == 1 && game.round_pickup_bonus_awarded);
+    int score = bb_game_pickup_score(game.pickups[0].type) + 500;
+    CHECK(game.players[0].score == score && active_pickups(&game) == 0);
+    bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+    bb_game_resize(&game, BB_MAP_WIDTH, BB_MAP_HEIGHT);
+    CHECK(game.round_pickups_collected == 1 && game.round_pickup_bonus_awarded);
+    wait_ticks(&game, 120);
+    CHECK(game.players[0].score == score);
+    game.state_time = 6.999f;
+    tick(&game, 0.0f, false, false);
+    CHECK(game.level == 1 && game.players[0].score == score);
+    CHECK(game.round_pickups_collected == 0 && !game.round_pickup_bonus_awarded);
+
+    /* 다음 라운드에서도 다시 받을 수 있고 새 게임은 점수와 기록을 모두 지운다. */
+    for(int i = 0; i < game.round_enemy_quota; ++i)
+    {
+        game.enemies[i].state = BB_ENEMY_DEAD;
+        game.enemies[i].body = (BBBody){.x = 10.0f + (float)i * 12.0f, .y = 10.0f};
+        game.enemies[i].bounces = 4;
+    }
+    tick(&game, 0.0f, false, false);
+    for(int i = 0; i < game.round_enemy_quota; ++i)
+    {
+        score += bb_game_pickup_score(game.pickups[i].type);
+        collect_test_pickup(&game, 0, i);
+    }
+    CHECK(game.round_pickup_bonus_awarded && game.players[0].score == score + 500);
+    bb_game_start(&game, 2);
+    CHECK(game.round_pickups_collected == 0 && !game.round_pickup_bonus_awarded);
+    CHECK(game.players[0].score == 0 && game.players[1].score == 0);
+
+    /* 클리어 제한 시간이 끝나는 마지막 틱의 수집도 전환 전에 점수에 반영한다. */
+    pickup_bonus_fixture(&game, 1, 1);
+    tick(&game, 0.0f, false, false);
+    score = bb_game_pickup_score(game.pickups[0].type) + 500;
+    game.state_time = 6.999f;
+    game.players[0].body = game.pickups[0].body;
+    tick(&game, 0.0f, false, false);
+    CHECK(game.level == 1 && game.players[0].score == score);
+    CHECK(game.round_pickups_collected == 0 && !game.round_pickup_bonus_awarded);
+}
+
+/* 진행 중 넓힌 화면에 추가된 적의 음식도 모두 먹어야 한다. 다시 좁혀도
+ * 이미 수집한 수와 라운드 목표를 유지하여 남은 음식을 건너뛰지 못하게 한다. */
+static void test_round_pickup_bonus_resize(void)
+{
+    BBGame game;
+    fixture(&game);
+    bb_game_resize(&game, 64, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 2);
+    memset(game.enemies, 0, sizeof game.enemies);
+    game.enemies[0] = (BBEnemy){.body = {.x = 14.0f, .y = 10.0f},
+        .active = true, .state = BB_ENEMY_DEAD, .bounces = 4};
+    game.enemies[1] = (BBEnemy){.active = true, .state = BB_ENEMY_SPAWNING, .spawn_delay = 1000000.0f};
+    tick(&game, 0.0f, false, false);
+    int score = bb_game_pickup_score(game.pickups[0].type);
+    collect_test_pickup(&game, 0, 0);
+    CHECK(game.round_pickups_collected == 1 && !game.round_pickup_bonus_awarded);
+    bb_game_resize(&game, 96, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 3 && bb_game_enemies_left(&game) == 2);
+    CHECK(game.round_pickups_collected == 1 && !game.round_pickup_bonus_awarded);
+    bb_game_resize(&game, BB_MAP_WIDTH, BB_MAP_HEIGHT);
+    CHECK(game.round_enemy_quota == 3 && game.round_pickups_collected == 1);
+    CHECK(!game.round_pickup_bonus_awarded && game.players[0].score == score);
+    game.players[0].body = (BBBody){.x = 4.0f, .y = 25.025f, .grounded = true};
+    for(int i = 1; i < 3; ++i)
+    {
+        game.enemies[i].state = BB_ENEMY_DEAD;
+        game.enemies[i].body = (BBBody){.x = 10.0f + (float)(i - 1) * 12.0f, .y = 10.0f};
+        game.enemies[i].bounces = 4;
+    }
+    tick(&game, 0.0f, false, false);
+    for(int i = 0; i < 2; ++i)
+    {
+        score += bb_game_pickup_score(game.pickups[i].type);
+        collect_test_pickup(&game, 0, i);
+        CHECK(game.round_pickups_collected == i + 2);
+        CHECK(game.round_pickup_bonus_awarded == (i == 1));
+        CHECK(game.players[0].score == score + (i == 1 ? 500 : 0));
+    }
 }
 
 /* 지정한 플레이어의 무적 시간을 없애고 같은 위치에 적을 한 틱 배치한다.
@@ -1291,6 +1496,9 @@ static void test_finite_input_and_determinism(void)
         CHECK(a.rng == b.rng);
         CHECK(a.state == b.state && a.level == b.level);
         CHECK(a.round_enemy_quota == b.round_enemy_quota);
+        CHECK(a.round_pickups_collected == b.round_pickups_collected);
+        CHECK(a.round_pickup_bonus_awarded == b.round_pickup_bonus_awarded);
+        CHECK(a.round_pickups_collected >= 0 && a.round_pickups_collected <= a.round_enemy_quota);
         CHECK(a.platform_warning_cooldown == b.platform_warning_cooldown);
         CHECK(a.platform_last_choice == b.platform_last_choice);
         /* 발판 이동도 같은 시간/입력에서 동일해야 하며 왕복 범위를 벗어나지 않는다. */
@@ -1793,6 +2001,17 @@ static void test_maximum_enemy_pickup_capacity(void)
         CHECK(types[type] == 2);
     tick(&game, 0.0f, false, false);
     CHECK(active_pickups(&game) == 40);
+    /* 최대 40개를 모두 먹어도 마지막 음식에서만 500점을 한 번 더한다. */
+    int score = 0;
+    for(int i = 0; i < BB_MAX_PICKUPS; ++i)
+    {
+        score += bb_game_pickup_score(game.pickups[i].type);
+        collect_test_pickup(&game, 0, i);
+        CHECK(game.round_pickups_collected == i + 1);
+        CHECK(game.round_pickup_bonus_awarded == (i == BB_MAX_PICKUPS - 1));
+        CHECK(game.players[0].score == score + (i == BB_MAX_PICKUPS - 1 ? 500 : 0));
+    }
+    CHECK(active_pickups(&game) == 0 && game.players[1].score == 0);
 }
 
 /* 최대 폭에서 서로 반대 방향으로 빠르게 이동하면 한 30Hz 갱신 사이에
@@ -2523,6 +2742,11 @@ int main(void)
     test_capture_and_release();
     test_capture_timeout_boundaries_and_late_capture();
     test_pop_drop_and_score();
+    test_round_pickup_bonus_cooperation();
+    test_round_pickup_bonus_pending_enemies();
+    test_round_pickup_bonus_missing_food();
+    test_round_pickup_bonus_transitions();
+    test_round_pickup_bonus_resize();
     test_lives_and_respawn();
     test_levels();
     test_enemy_ai_and_boulders();

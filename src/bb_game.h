@@ -22,6 +22,7 @@
 #define BB_MAX_ENEMIES ((BB_LEVEL_COUNT * BB_WORLD_MAX_WIDTH + BB_MAP_WIDTH - 1) / BB_MAP_WIDTH)
 #define BB_MAX_BOULDERS 32
 #define BB_MAX_PICKUPS BB_MAX_ENEMIES
+#define BB_ALL_PICKUPS_BONUS 500 /* 한 라운드의 음식을 빠짐없이 먹었을 때 추가 점수 */
 #define BB_MAX_BUBBLES 64
 /* 마지막 목숨을 잃었을 때 생기는 큰 부활 버블의 크기와 구조 제한 시간. */
 #define BB_RESCUE_BUBBLE_RADIUS 1.75f
@@ -40,8 +41,6 @@
 #define BB_PLATFORM_FIRST_SOLID_SECONDS 20.0f
 #define BB_PLATFORM_ROUND_ACCELERATION 3.5f
 #define BB_PLATFORM_SOLID_VARIATION 2.0f
-#define BB_PLATFORM_MIN_SOLID_SECONDS 6.0f
-#define BB_PLATFORM_MAX_SOLID_SECONDS 22.0f
 #define BB_PLATFORM_FIRST_WARNING_GAP_SECONDS 8.0
 #define BB_PLATFORM_WARNING_GAP_REDUCTION 1.5
 /* 한 번의 깜빡임은 표시 0.2초 + 숨김 0.2초다. 이를 세 번 반복한다. */
@@ -216,6 +215,8 @@ typedef struct BBGame {
     int pickup_cursor; /* 20종을 모두 뽑은 뒤 다시 섞는다. */
     int level; /* 배열 번호 0..4, 화면에는 1..5로 표시 */
     int round_enemy_quota; /* 현재 라운드에서 한 번이라도 생성한 적 수. 축소/처치 시 줄이지 않는다. */
+    int round_pickups_collected; /* 이번 라운드에서 두 플레이어가 실제로 먹은 음식 수 */
+    bool round_pickup_bonus_awarded; /* 모두 먹은 보너스를 이미 한 번 지급했는가 */
     bool won; /* 마지막 라운드까지 이겼는가 */
     int player_count; /* 1인 또는 2인. 배열 번호는 각각 0과 1이다. */
     BBState state;          /* 메뉴/인트로/플레이/클리어/결과 */

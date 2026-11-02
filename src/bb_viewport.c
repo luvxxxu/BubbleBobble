@@ -48,14 +48,6 @@ BBViewport bb_viewport_fit(int framebuffer_width, int framebuffer_height, float 
     {
         view.rows = BB_MAP_HEIGHT;
     }
-    if(view.columns > BB_WORLD_MAX_WIDTH)
-    {
-        view.columns = BB_WORLD_MAX_WIDTH;
-    }
-    if(view.rows > BB_WORLD_MAX_HEIGHT)
-    {
-        view.rows = BB_WORLD_MAX_HEIGHT;
-    }
     view.offset_x = (width - (float)view.columns * tile_pixels) * 0.5f;
     view.offset_y = (height - (float)view.rows * tile_pixels) * 0.5f;
     return view;

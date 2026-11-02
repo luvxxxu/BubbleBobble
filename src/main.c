@@ -42,10 +42,8 @@ static void poll_key_edges(void)
  * 계속 누르고 있는지는 IsKeyDown으로 별도 확인하며, 여기서는 눌린 순간만 취급한다. */
 static bool key_pressed(int key)
 {
-    if (key >= 0 && key < (int)(sizeof pressed_keys / sizeof pressed_keys[0])) {
-        if (pressed_keys[key]) {
-            return true;
-        }
+    if (key >= 0 && key < (int)(sizeof pressed_keys / sizeof pressed_keys[0]) && pressed_keys[key]) {
+        return true;
     }
     return IsKeyPressed(key);
 }
@@ -67,10 +65,7 @@ static bool positive_number(const char *value, int *out, int maximum)
 /* 해당 번호의 패드가 연결되었을 때만 버튼의 눌림 상태를 읽는다. */
 static bool pad_pressed(int index, int button)
 {
-    if (!IsGamepadAvailable(index)) {
-        return false;
-    }
-    return IsGamepadButtonPressed(index, button);
+    return IsGamepadAvailable(index) && IsGamepadButtonPressed(index, button);
 }
 
 /* 한 플레이어의 여러 입력 장치를 코어가 이해하는 이동/점프/발사 값으로 합친다.
@@ -180,9 +175,7 @@ static void score_submit(BBUI *ui, const BBGame *game, const char *path, bool sm
         return;
     }
     /* 파일 형식은 음수가 없는 점수와 사람이 읽는 1부터 시작하는 라운드를 쓴다. */
-    if (game->players[player].score < 0) {
-        record.score = 0;
-    } else {
+    if (game->players[player].score >= 0) {
         record.score = (unsigned)game->players[player].score;
     }
     record.round = game->level + 1;

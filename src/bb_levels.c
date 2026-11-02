@@ -32,31 +32,24 @@ static const BBPlatformSpan layouts[BB_LEVEL_COUNT][BB_LEVEL_PLATFORM_COUNT] = {
  * 0=빈 공간, 1=충돌 없는 장식, 2=아래에서 통과할 수 있는 발판, 3=단단한 벽이다. */
 void bb_levels_build(uint8_t *maps)
 {
-    int level;
-    int x;
-    int y;
-    int i;
-    uint8_t *map;
-    const BBPlatformSpan *span;
-
     if (maps == NULL) {
         return;
     }
     /* 이전 데이터가 남지 않게 전체를 빈 공간으로 지운 다음 필요한 타일만 쓴다. */
     memset(maps, 0, BB_LEVEL_COUNT * BB_MAP_HEIGHT * BB_MAP_WIDTH);
-    for (level = 0; level < BB_LEVEL_COUNT; ++level) {
+    for (int level = 0; level < BB_LEVEL_COUNT; ++level) {
         /* 1차원 포인터를 현재 라운드의 첫 칸으로 옮긴다.
          * 해당 라운드 안의 (x,y)는 y * 가로크기 + x로 접근한다. */
-        map = maps + level * BB_MAP_HEIGHT * BB_MAP_WIDTH;
+        uint8_t *map = maps + level * BB_MAP_HEIGHT * BB_MAP_WIDTH;
         /* 맨 위 두 줄은 진입 공간으로 비우고, 좌우에 두 타일 두께의 벽을 만든다. */
-        for (y = 2; y < BB_MAP_HEIGHT; ++y) {
+        for (int y = 2; y < BB_MAP_HEIGHT; ++y) {
             map[y * BB_MAP_WIDTH] = 3;
             map[y * BB_MAP_WIDTH + 1] = 3;
             map[y * BB_MAP_WIDTH + 30] = 3;
             map[y * BB_MAP_WIDTH + 31] = 3;
         }
         /* 바닥 중앙 네 칸을 비워 낙하 후 상단으로 순환하는 경로를 만든다. */
-        for (x = 2; x < BB_MAP_WIDTH - 2; ++x) {
+        for (int x = 2; x < BB_MAP_WIDTH - 2; ++x) {
             if (x >= 14 && x < 18) {
                 continue;
             }
@@ -65,11 +58,11 @@ void bb_levels_build(uint8_t *maps)
             map[26 * BB_MAP_WIDTH + x] = 2;
             map[27 * BB_MAP_WIDTH + x] = 1;
         }
-        for (i = 0; i < BB_LEVEL_PLATFORM_COUNT; ++i) {
-            span = &layouts[level][i];
+        for (int i = 0; i < BB_LEVEL_PLATFORM_COUNT; ++i) {
+            const BBPlatformSpan *span = &layouts[level][i];
             /* 끝 열은 포함하지 않는 범위로 순회하여 정확히 width개를 채운다.
              * 원본 배열은 계속 보존하고 게임의 소수 좌표 이동량만 덧붙여 사용한다. */
-            for (x = span->x; x < span->x + span->width; ++x) {
+            for (int x = span->x; x < span->x + span->width; ++x) {
                 map[span->y * BB_MAP_WIDTH + x] = 2;
             }
         }

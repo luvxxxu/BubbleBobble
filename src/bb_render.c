@@ -181,31 +181,16 @@ static void blue_capture_ring(Color *pixels, int image_width, int column, int ro
                 if (ring[y][x] || !bubble_green(pixels[position])) {
                     continue;
                 }
-                bool connected = false;
-                if (x > 0 && ring[y][x - 1]) {
-                    connected = true;
-                }
-                if (x < 15 && ring[y][x + 1]) {
-                    connected = true;
-                }
-                if (y > 0 && ring[y - 1][x]) {
-                    connected = true;
-                }
-                if (y < 15 && ring[y + 1][x]) {
-                    connected = true;
-                }
                 /* 한 픽셀 두께의 둥근 선은 모서리에서 대각선으로 이어진다. */
-                if (x > 0 && y > 0 && ring[y - 1][x - 1]) {
-                    connected = true;
-                }
-                if (x < 15 && y > 0 && ring[y - 1][x + 1]) {
-                    connected = true;
-                }
-                if (x > 0 && y < 15 && ring[y + 1][x - 1]) {
-                    connected = true;
-                }
-                if (x < 15 && y < 15 && ring[y + 1][x + 1]) {
-                    connected = true;
+                bool connected = false;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if (nx >= 0 && nx < 16 && ny >= 0 && ny < 16 && ring[ny][nx]) {
+                            connected = true;
+                        }
+                    }
                 }
                 if (connected) {
                     ring[y][x] = true;
@@ -274,12 +259,7 @@ static Texture2D blue_texture(const char *directory, const char *name, bool capt
     }
     /* LoadImageColors가 만든 RGBA 배열을 읽는 임시 Image다. GPU 복사가 끝난
      * 뒤 배열과 원본 이미지를 각각 한 번씩 해제한다. */
-    Image recolored = {0};
-    recolored.data = pixels;
-    recolored.width = original.width;
-    recolored.height = original.height;
-    recolored.mipmaps = 1;
-    recolored.format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8;
+    Image recolored = {pixels, original.width, original.height, 1, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8};
     result = LoadTextureFromImage(recolored);
     if (result.id) {
         SetTextureFilter(result, TEXTURE_FILTER_POINT);
@@ -375,14 +355,11 @@ void bb_assets_unload(BBAssets *assets)
     if (assets->font.texture.id && assets->font.texture.id != GetFontDefault().texture.id) {
         UnloadFont(assets->font);
     }
-    if (IsSoundValid(assets->fire)) {
-        UnloadSound(assets->fire);
-    }
-    if (IsSoundValid(assets->jump)) {
-        UnloadSound(assets->jump);
-    }
-    if (IsSoundValid(assets->death)) {
-        UnloadSound(assets->death);
+    Sound sounds[] = {assets->fire, assets->jump, assets->death};
+    for (size_t i = 0; i < sizeof sounds / sizeof sounds[0]; ++i) {
+        if (IsSoundValid(sounds[i])) {
+            UnloadSound(sounds[i]);
+        }
     }
     /* 음악 디코더가 원본 버퍼를 참조하므로 스트림을 먼저 닫고 버퍼를 나중에 해제한다. */
     if (IsMusicValid(assets->music)) {
@@ -543,11 +520,17 @@ static void player_hud(const BBAssets *assets, const BBPlayer *player, int index
         text(assets, "NEXT ROUND", x, 13, GRAY);
     } else {
         /* 탈락은 회색, 가속 중은 노란색으로 일반 마나 충전 상태와 구별한다. */
+        /* 가속 중에는 남은 초를 올림해 0초처럼 보이는 상태를 줄이고, 평소에는 비율을 쓴다. */
         if (player->state == BB_PLAYER_OUT) {
             color = GRAY;
+            snprintf(value, sizeof value, "OUT");
         }
         else if (player->boosting) {
             color = YELLOW;
+            snprintf(value, sizeof value, "X2 %dS", (int)ceil((double)energy * BB_ENERGY_BOOST_SECONDS));
+        }
+        else {
+            snprintf(value, sizeof value, "%d", (int)(energy * 100));
         }
         text(assets, "MANA", x, 13, color);
         /* 바깥 사각형, 어두운 내부, 채워진 길이 순으로 마나 막대를 만든다. */
@@ -555,16 +538,6 @@ static void player_hud(const BBAssets *assets, const BBPlayer *player, int index
         DrawRectangleRec(bb_rectangle(x + 35, 15, 34, 5), bb_color(32, 32, 32, 255));
         if (fill > 0) {
             DrawRectangleRec(bb_rectangle(x + 35, 15, (float)fill, 5), color);
-        }
-        /* 가속 중에는 남은 초를 올림해 0초처럼 보이는 상태를 줄이고, 평소에는 비율을 쓴다. */
-        if (player->state == BB_PLAYER_OUT) {
-            snprintf(value, sizeof value, "OUT");
-        }
-        else if (player->boosting) {
-            snprintf(value, sizeof value, "X2 %dS", (int)ceil((double)energy * BB_ENERGY_BOOST_SECONDS));
-        }
-        else {
-            snprintf(value, sizeof value, "%d", (int)(energy * 100));
         }
         text(assets, value, x + 112 - MeasureTextEx(assets->font, value, 8, 0).x, 13, color);
     }
@@ -585,12 +558,11 @@ static void player_hud(const BBAssets *assets, const BBPlayer *player, int index
         snprintf(label, sizeof label, "P%d LIFE %d", index + 1, lives);
     }
     /* 아래쪽 중앙의 라운드 표시를 비워 두고 목숨은 양 끝에 배치한다. */
-    if (index == 0) {
-        text(assets, label, 8, height - 10, player_colors[index]);
+    x = 8;
+    if (index != 0) {
+        x = width - 8 - MeasureTextEx(assets->font, label, 8, 0).x;
     }
-    else {
-        text(assets, label, width - 8 - MeasureTextEx(assets->font, label, 8, 0).x, height - 10, player_colors[index]);
-    }
+    text(assets, label, x, height - 10, player_colors[index]);
 }
 
 /* 이미 정렬된 점수 배열에서 화면에 들어가는 개수만 표로 표시한다.
@@ -626,15 +598,13 @@ static void score_screen(const BBAssets *assets, const BBGame *game, const BBUI 
 {
     char label[48];
     /* player_count가 0이면 메뉴에서 순위표만 열었으므로 승패 제목을 표시하지 않는다. */
+    const char *title = "GAME OVER";
     if (game->player_count == 0) {
-        centered(assets, "LEADERBOARD", 16, YELLOW);
+        title = "LEADERBOARD";
+    } else if (game->won) {
+        title = "ALL ROUNDS CLEAR!";
     }
-    else if (game->won) {
-        centered(assets, "ALL ROUNDS CLEAR!", 16, YELLOW);
-    }
-    else {
-        centered(assets, "GAME OVER", 16, YELLOW);
-    }
+    centered(assets, title, 16, YELLOW);
     for (int i = 0; i < game->player_count; ++i) {
         int score = game->players[i].score;
         if (score < 0) {
@@ -773,10 +743,8 @@ static void draw_enemies(const BBAssets *assets, const BBGame *game)
     for (int i = 0; i < BB_MAX_ENEMIES; ++i) {
         const BBEnemy *enemy = &game->enemies[i];
         /* 포획된 적은 아래 버블 반복에서 버블 위치에 그리므로 여기서는 중복 표시하지 않는다. */
-        if (!enemy->active || enemy->state == BB_ENEMY_CAPTURED) {
-            continue;
-        }
-        if (enemy->state == BB_ENEMY_SPAWNING && enemy->age <= enemy->spawn_delay) {
+        if (!enemy->active || enemy->state == BB_ENEMY_CAPTURED ||
+            (enemy->state == BB_ENEMY_SPAWNING && enemy->age <= enemy->spawn_delay)) {
             continue;
         }
         /* 분노 상태는 다음 두 칸, 사망 상태는 12번부터 네 칸의 별도 애니메이션을 쓴다. */

@@ -5,9 +5,7 @@
 /* 화면 위치, 그리기 기준점 등에 쓰는 2차원 좌표를 만든다. 단위는 호출자가 정한다. */
 Vector2 bb_vector2(float x, float y)
 {
-    Vector2 point;
-    point.x = x;
-    point.y = y;
+    Vector2 point = {x, y};
     return point;
 }
 
@@ -15,22 +13,14 @@ Vector2 bb_vector2(float x, float y)
  * 폭/높이의 부호는 그대로 보존해 raylib의 텍스처 좌우/상하 반전에도 사용할 수 있다. */
 Rectangle bb_rectangle(float x, float y, float width, float height)
 {
-    Rectangle rectangle;
-    rectangle.x = x;
-    rectangle.y = y;
-    rectangle.width = width;
-    rectangle.height = height;
+    Rectangle rectangle = {x, y, width, height};
     return rectangle;
 }
 
 /* RGBA 각 채널을 0..255로 받는다. 알파 a는 0이면 투명, 255이면 불투명하다. */
 Color bb_color(unsigned char r, unsigned char g, unsigned char b, unsigned char a)
 {
-    Color color;
-    color.r = r;
-    color.g = g;
-    color.b = b;
-    color.a = a;
+    Color color = {r, g, b, a};
     return color;
 }
 

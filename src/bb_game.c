@@ -24,13 +24,9 @@ typedef struct BBHits {
 static float clamp(float value, float low, float high)
 {
     if(value < low)
-    {
         return low;
-    }
     if(value > high)
-    {
         return high;
-    }
     return value;
 }
 
@@ -40,9 +36,7 @@ static float decrease(float value, float dt)
 {
     value -= dt;
     if(value < 0.0f)
-    {
         return 0.0f;
-    }
     return value;
 }
 
@@ -70,13 +64,9 @@ int bb_game_tile(const BBGame *game, int x, int y)
 {
     /* 맵 밖은 빈 공간이다. 아래쪽 순환 통로와 맵 위 진입에 벽을 만들지 않는다. */
     if(game == NULL || x < 0 || x >= game->world_width || y < 0 || y >= game->world_height)
-    {
         return 0;
-    }
     if(game->world_width == BB_MAP_WIDTH && game->world_height == BB_MAP_HEIGHT)
-    {
         return game->maps[game->level][y][x];
-    }
 
     int offset_x = (game->world_width - BB_MAP_WIDTH) / 2;
     int offset_y = game->world_height - BB_MAP_HEIGHT;
@@ -103,13 +93,9 @@ int bb_game_tile(const BBGame *game, int x, int y)
         return game->maps[game->level][wall_y][wall_x];
     }
     if(source_y < 0)
-    {
         return 0;
-    }
     if(source_x >= 2 && source_x < BB_MAP_WIDTH - 2)
-    {
         return game->maps[game->level][source_y][source_x];
-    }
     if(y >= game->world_height - 2)
     {
         int floor_x = 2;
@@ -130,9 +116,7 @@ static const BBMovingPlatform *platform_for_tile(const BBGame *game, int x, int 
     {
         const BBMovingPlatform *platform = &game->platforms[i];
         if(platform->y == y && x >= platform->x && x < platform->x + platform->width)
-        {
             return platform;
-        }
     }
     return NULL;
 }
@@ -141,15 +125,8 @@ static const BBMovingPlatform *platform_for_tile(const BBGame *game, int x, int 
  * 생성 예고는 아직 실체가 없으므로 아래/위에서 모두 통과한다. */
 bool bb_game_platform_solid(const BBMovingPlatform *platform)
 {
-    if(platform == NULL)
-    {
-        return false;
-    }
-    if(platform->state == BB_PLATFORM_SOLID || platform->state == BB_PLATFORM_DISAPPEARING)
-    {
-        return true;
-    }
-    return false;
+    return platform != NULL &&
+           (platform->state == BB_PLATFORM_SOLID || platform->state == BB_PLATFORM_DISAPPEARING);
 }
 
 /* 0.2초 점선 표시와 0.2초 숨김을 세 번 반복한다. 렌더링 프레임이 아닌
@@ -174,9 +151,7 @@ static int tile_at(const BBGame *game, int x, int y)
     {
         const BBMovingPlatform *platform = platform_for_tile(game, x, y);
         if(platform != NULL && !bb_game_platform_solid(platform))
-        {
             return 0;
-        }
     }
     return tile;
 }
@@ -195,9 +170,7 @@ static void reset_platforms(BBGame *game)
         for(int x = 0; x < BB_MAP_WIDTH; ++x)
         {
             if(game->maps[game->level][y][x] != 2)
-            {
                 continue;
-            }
             int first = x;
             while(x + 1 < BB_MAP_WIDTH && game->maps[game->level][y][x + 1] == 2)
             {
@@ -232,14 +205,10 @@ static void reset_platforms(BBGame *game)
 float bb_game_tile_offset(const BBGame *game, int x, int y)
 {
     if(game == NULL || y < 0 || y >= game->world_height - 2 || bb_game_tile(game, x, y) != 2)
-    {
         return 0.0f;
-    }
     const BBMovingPlatform *platform = platform_for_tile(game, x, y);
     if(platform == NULL)
-    {
         return 0.0f;
-    }
     return platform->offset;
 }
 
@@ -274,21 +243,15 @@ static void update_platform_state(BBMovingPlatform *platform, float dt)
 {
     bool was_solid = bb_game_platform_solid(platform);
     platform->state_time += (double)dt;
-    for(;;)
+    while(platform->state != BB_PLATFORM_SOLID)
     {
-        if(platform->state == BB_PLATFORM_SOLID)
-        {
-            break;
-        }
         double duration = BB_PLATFORM_WARNING_SECONDS;
         if(platform->state == BB_PLATFORM_ABSENT)
         {
             duration = BB_PLATFORM_ABSENT_SECONDS;
         }
         if(platform->state_time < duration)
-        {
             break;
-        }
         platform->state_time -= duration;
         switch(platform->state)
         {
@@ -314,9 +277,7 @@ static void update_platform_state(BBMovingPlatform *platform, float dt)
 static void schedule_platform_disappearance(BBGame *game, float dt)
 {
     if(game->platform_count == 0)
-    {
         return;
-    }
     int limit = 1 + game->level / 2;
     int available = 1;
     if(game->platform_count > 2)
@@ -334,9 +295,7 @@ static void schedule_platform_disappearance(BBGame *game, float dt)
             ++cycling;
         }
     if(cycling >= limit || game->platform_warning_cooldown > 0.0)
-    {
         return;
-    }
     /* 시간이 된 발판만 후보에 넣는다. 실제로 시작할 때 한 번만 추첨하므로
      * 대기 중인 틱 수가 난수 상태를 불필요하게 바꾸지 않는다. */
     int candidates[BB_MAX_PLATFORMS];
@@ -355,9 +314,7 @@ static void schedule_platform_disappearance(BBGame *game, float dt)
         }
     }
     if(candidate_count == 0)
-    {
         return;
-    }
     int selected = (int)(random_unit(game) * (float)candidate_count);
     int index = candidates[selected];
     BBMovingPlatform *platform = &game->platforms[index];
@@ -400,9 +357,7 @@ static int solid_tile_at(const BBGame *game, float x, int y, float *left)
     {
         const BBMovingPlatform *platform = &game->platforms[i];
         if(platform->y != y || !bb_game_platform_solid(platform))
-        {
             continue;
-        }
         float platform_left = (float)platform->x + platform->offset;
         if(x >= platform_left && x < platform_left + (float)platform->width)
         {
@@ -451,15 +406,11 @@ static void update_platforms(BBGame *game, float dt)
 static float platform_carry(const BBGame *game, const BBBody *body, float half_width, float half_height)
 {
     if(!body->grounded || body->vy < 0.0f)
-    {
         return 0.0f;
-    }
     float feet = body->y + half_height;
     int row = (int)floorf(feet + 0.001f);
     if(row < 0 || row >= game->world_height - 2 || fabsf(feet - (float)row) > 0.001f)
-    {
         return 0.0f;
-    }
     /* 두 발판의 끝을 동시에 밟으면 더 넓게 겹치는 발판 하나만 따른다.
      * 이전 틱의 위치로 판정하므로 움직이기 전의 실제 지지면을 찾는다. */
     float carry = 0.0f;
@@ -468,9 +419,7 @@ static float platform_carry(const BBGame *game, const BBBody *body, float half_w
     {
         const BBMovingPlatform *platform = &game->platforms[i];
         if(platform->y != row || !bb_game_platform_solid(platform))
-        {
             continue;
-        }
         float left = (float)platform->x + platform->offset - platform->step;
         float right = left + (float)platform->width;
         float overlap = fminf(body->x + half_width, right) - fmaxf(body->x - half_width, left);
@@ -489,45 +438,31 @@ static float platform_carry(const BBGame *game, const BBBody *body, float half_w
 static void release_platform_rider(const BBGame *game, BBBody *body, float half_width, float half_height)
 {
     if(!body->grounded || body->vy < 0.0f)
-    {
         return;
-    }
     float feet = body->y + half_height;
     int row = (int)floorf(feet + 0.001f);
     if(fabsf(feet - (float)row) > 0.001f)
-    {
         return;
-    }
     bool lost_support = false;
     for(int i = 0; i < game->platform_count; ++i)
     {
         const BBMovingPlatform *platform = &game->platforms[i];
         if(platform->y != row)
-        {
             continue;
-        }
         float left = (float)platform->x + platform->offset - platform->step;
         float right = left + (float)platform->width;
         if(body->x + half_width <= left + 0.0001f || body->x - half_width >= right - 0.0001f)
-        {
             continue;
-        }
         if(bb_game_platform_solid(platform))
-        {
             return;
-        }
         lost_support = lost_support || platform->vanished;
     }
     if(!lost_support)
-    {
         return;
-    }
     for(int x = (int)floorf(body->x - half_width + 0.0001f);
         x <= (int)floorf(body->x + half_width - 0.0001f); ++x)
         if(tile_at(game, x, row) == 3)
-        {
             return;
-        }
     body->grounded = false;
 }
 
@@ -581,9 +516,7 @@ static BBHits move_body(const BBGame *game, BBBody *body, float half_width, floa
         for(int x = first_column; x <= last_column; ++x)
         {
             if(tile_at(game, x, y) != 3)
-            {
                 continue;
-            }
             /* 이전 위치가 벽 바깥이었을 때만 진입 방향의 경계로 되돌린다.
              * 타일 1(장식), 2(발판)는 옆면을 막지 않는다. */
             if(horizontal_step > 0.0f && old_x + half_width <= (float)x + 0.001f)
@@ -621,18 +554,12 @@ static BBHits move_body(const BBGame *game, BBBody *body, float half_width, floa
         {
             int tile = tile_at(game, x, y);
             if(tile != 3 && !(one_way && tile == 2))
-            {
                 continue;
-            }
             if(tile == 2 && y < game->world_height - 2 && platform_for_tile(game, x, y) != NULL)
-            {
                 continue;
-            }
             float tile_left = (float)x;
             if(body->x + half_width <= tile_left + 0.0001f || body->x - half_width >= tile_left + 1.0f - 0.0001f)
-            {
                 continue;
-            }
             if(body->vy >= 0.0f && old_y + half_height <= (float)y + 0.001f && body->y + half_height >= (float)y)
             {
                 /* 내려오며 윗면을 통과한 경우 발을 윗면에 맞춘다. 여러 타일과
@@ -654,15 +581,11 @@ static BBHits move_body(const BBGame *game, BBBody *body, float half_width, floa
             {
                 const BBMovingPlatform *platform = &game->platforms[i];
                 if(platform->y != y || !bb_game_platform_solid(platform))
-                {
                     continue;
-                }
                 float left = (float)platform->x + platform->offset;
                 float right = left + (float)platform->width;
                 if(body->x + half_width <= left + 0.0001f || body->x - half_width >= right - 0.0001f)
-                {
                     continue;
-                }
                 body->y = fminf(body->y, (float)y - half_height);
                 body->grounded = true;
                 hit.y = true;
@@ -720,25 +643,19 @@ static void clamp_rescue_bubble(const BBGame *game, BBPlayer *player)
     if((player->body.x - x) * player->body.vx > 0.0f)
     {
         player->body.vx = -player->body.vx;
+        player->rescue_drift_vx = fabsf(player->rescue_drift_vx);
         if(player->body.x > x)
         {
-            player->rescue_drift_vx = -fabsf(player->rescue_drift_vx);
-        }
-        else
-        {
-            player->rescue_drift_vx = fabsf(player->rescue_drift_vx);
+            player->rescue_drift_vx = -player->rescue_drift_vx;
         }
     }
     if((player->body.y - y) * player->body.vy > 0.0f)
     {
         player->body.vy = -player->body.vy;
+        player->rescue_drift_vy = fabsf(player->rescue_drift_vy);
         if(player->body.y > y)
         {
-            player->rescue_drift_vy = -fabsf(player->rescue_drift_vy);
-        }
-        else
-        {
-            player->rescue_drift_vy = fabsf(player->rescue_drift_vy);
+            player->rescue_drift_vy = -player->rescue_drift_vy;
         }
     }
     player->body.x = x;
@@ -926,6 +843,8 @@ static void enter_level(BBGame *game, int level)
         }
     }
     game->round_enemy_quota = 0;
+    game->round_pickups_collected = 0;
+    game->round_pickup_bonus_awarded = false;
     add_round_enemies(game, false);
 }
 
@@ -953,9 +872,7 @@ static void shuffle_pickups(BBGame *game)
 void bb_game_init(BBGame *game, const uint8_t *tiles, uint32_t seed)
 {
     if(game == NULL)
-    {
         return;
-    }
     memset(game, 0, sizeof *game);
     game->world_width = BB_MAP_WIDTH;
     game->world_height = BB_MAP_HEIGHT;
@@ -974,24 +891,18 @@ void bb_game_init(BBGame *game, const uint8_t *tiles, uint32_t seed)
 static float platform_resize_shift(const BBGame *game, const BBBody *body, float half_width, float half_height, int dx)
 {
     if(!body->grounded || body->vy < 0.0f)
-    {
         return 0.0f;
-    }
     float feet = body->y + half_height;
     int row = (int)floorf(feet + 0.001f);
     if(fabsf(feet - (float)row) > 0.001f)
-    {
         return 0.0f;
-    }
     float shift = 0.0f;
     float best_overlap = 0.0001f;
     for(int i = 0; i < game->platform_count; ++i)
     {
         const BBMovingPlatform *platform = &game->platforms[i];
         if(platform->y != row || !bb_game_platform_solid(platform))
-        {
             continue;
-        }
         float left = (float)platform->x + platform->offset;
         float right = left + (float)platform->width;
         float overlap = fminf(body->x + half_width, right) - fmaxf(body->x - half_width, left);
@@ -1031,9 +942,7 @@ static void resize_body(BBBody *body, float half_width, int dx, int dy, float pl
 void bb_game_resize(BBGame *game, int width, int height)
 {
     if(game == NULL)
-    {
         return;
-    }
     if(width < BB_MAP_WIDTH)
     {
         width = BB_MAP_WIDTH;
@@ -1051,9 +960,7 @@ void bb_game_resize(BBGame *game, int width, int height)
         height = BB_WORLD_MAX_HEIGHT;
     }
     if(width == game->world_width && height == game->world_height)
-    {
         return;
-    }
     int dx = (width - BB_MAP_WIDTH) / 2 - (game->world_width - BB_MAP_WIDTH) / 2;
     int dy = height - game->world_height;
     float player_speed_ratio = (float)width / (float)game->world_width;
@@ -1077,13 +984,13 @@ void bb_game_resize(BBGame *game, int width, int height)
             shift = platform_resize_shift(game, &player->body, 0.9f, 0.975f, dx);
         }
         resize_body(&player->body, half_width, dx, dy, shift, width, narrower, shorter);
+        /* 공중 관성은 입력이 없어도 유지되므로 현재 vx도 폭 변화율로 한 번만
+         * 보정한다. 부활 버블은 별도의 떠다니는 속도를 그대로 유지한다. */
         if(player->state == BB_PLAYER_BUBBLE)
         {
             clamp_rescue_bubble(game, player);
         }
-        /* 공중 관성은 입력이 없어도 유지되므로 현재 vx도 폭 변화율로 한 번만
-         * 보정한다. 부활 버블은 별도의 떠다니는 속도를 그대로 유지한다. */
-        if(player->state != BB_PLAYER_BUBBLE)
+        else
         {
             player->body.vx *= player_speed_ratio;
         }
@@ -1167,9 +1074,7 @@ void bb_game_resize(BBGame *game, int width, int height)
 void bb_game_start(BBGame *game, int player_count)
 {
     if(game == NULL)
-    {
         return;
-    }
     if(player_count < 1)
     {
         player_count = 1;
@@ -1195,6 +1100,8 @@ void bb_game_start(BBGame *game, int player_count)
     memset(&game->events, 0, sizeof game->events);
     game->level = 0;
     game->round_enemy_quota = 0;
+    game->round_pickups_collected = 0;
+    game->round_pickup_bonus_awarded = false;
     game->won = false;
     shuffle_pickups(game);
     for(int i = 0; i < BB_MAX_PLAYERS; ++i)
@@ -1215,9 +1122,7 @@ void bb_game_start(BBGame *game, int player_count)
 void bb_game_menu(BBGame *game)
 {
     if(game == NULL)
-    {
         return;
-    }
     game->state = BB_STATE_MENU;
     game->state_time = 0.0f;
     memset(&game->events, 0, sizeof game->events);
@@ -1239,9 +1144,7 @@ int bb_game_enemies_left(const BBGame *game)
 {
     int count = 0;
     if(game == NULL)
-    {
         return 0;
-    }
     for(int i = 0; i < BB_MAX_ENEMIES; ++i)
         if(game->enemies[i].active && game->enemies[i].state != BB_ENEMY_DEAD)
         {
@@ -1259,9 +1162,7 @@ int bb_game_pickup_score(BBPickupType type)
         100, 200, 150, 200, 100, 150, 300, 500, 300, 400
     };
     if(type < 0 || type >= BB_PICKUP_TYPE_COUNT)
-    {
         return 0;
-    }
     return scores[type];
 }
 
@@ -1270,9 +1171,7 @@ int bb_game_pickup_score(BBPickupType type)
 static void damage_player(BBGame *game, BBPlayer *player)
 {
     if(!player->active || player->state != BB_PLAYER_NORMAL || player->invulnerable > 0.0f)
-    {
         return;
-    }
     --player->lives;
     player->state = BB_PLAYER_DEAD;
     player->death_timer = 1.5f;
@@ -1287,16 +1186,12 @@ static void damage_player(BBGame *game, BBPlayer *player)
 static void fire_bubble(BBGame *game, BBPlayer *player, int owner)
 {
     if(player->fire_cooldown > 0.0f)
-    {
         return;
-    }
     for(int i = 0; i < BB_MAX_BUBBLES; ++i)
     {
         BBBubble *bubble = &game->bubbles[i];
         if(bubble->active)
-        {
             continue;
-        }
         float x = player->body.x + (float)player->facing * 2.4f;
         float y = player->body.y;
         float speed = 20.0f * (float)player->facing;
@@ -1373,9 +1268,7 @@ static void update_mana(BBPlayer *player, float dt)
 static void update_player(BBGame *game, BBPlayer *player, int index, BBInput input, float dt)
 {
     if(!player->active || player->state == BB_PLAYER_OUT || player->state == BB_PLAYER_WAIT_ROUND)
-    {
         return;
-    }
     if(player->state == BB_PLAYER_BUBBLE)
     {
         /* 구조 제한 시간과 이동만 갱신한다. */
@@ -1424,7 +1317,7 @@ static void update_player(BBGame *game, BBPlayer *player, int index, BBInput inp
     {
         player->facing = -1;
     }
-    if(move > 0.0f)
+    else if(move > 0.0f)
     {
         player->facing = 1;
     }
@@ -1455,7 +1348,6 @@ static void update_player(BBGame *game, BBPlayer *player, int index, BBInput inp
         if(player->falling)
         {
             /* 떨어지는 동안은 느린 일정 속도로 낙하하고 좌우 제어를 허용한다. */
-            player->body.vx = move * BB_PLAYER_AIR_SPEED * speed_multiplier;
             player->body.vy = 6.0f;
         }
         else
@@ -1465,11 +1357,11 @@ static void update_player(BBGame *game, BBPlayer *player, int index, BBInput inp
             {
                 player->air_control = true;
             }
-            if(player->air_control)
-            {
-                player->body.vx = move * BB_PLAYER_AIR_SPEED * speed_multiplier;
-            }
             player->body.vy += 30.0f * dt;
+        }
+        if(player->falling || player->air_control)
+        {
+            player->body.vx = move * BB_PLAYER_AIR_SPEED * speed_multiplier;
         }
     }
     move_body(game, &player->body, 0.9f, 0.975f, dt, true, true);
@@ -1489,9 +1381,7 @@ static const BBPlayer *closest_player(const BBGame *game, const BBBody *body)
     {
         const BBPlayer *player = &game->players[i];
         if(!player->active || player->state != BB_PLAYER_NORMAL)
-        {
             continue;
-        }
         float dx = player->body.x - body->x;
         float dy = player->body.y - body->y;
         float distance = dx * dx + dy * dy;
@@ -1513,9 +1403,7 @@ static bool platform_above(const BBGame *game, const BBBody *body)
     {
         float tile_left = 0.0f;
         if(solid_tile_at(game, body->x, y, &tile_left) != 0)
-        {
             return true;
-        }
     }
     return false;
 }
@@ -1524,17 +1412,11 @@ static bool platform_above(const BBGame *game, const BBBody *body)
  * 흩뜨리며, 배열이 가득 차 있으면 발사 타이머를 유지해 다음 틱에 재시도한다. */
 static void throw_boulder(BBGame *game, BBEnemy *enemy)
 {
-    if(enemy->throw_timer < 4.0f)
-    {
-        return;
-    }
     for(int i = 0; i < BB_MAX_BOULDERS; ++i)
     {
         BBBoulder *boulder = &game->boulders[i];
         if(boulder->active)
-        {
             continue;
-        }
         float angle = random_unit(game) - 0.5f;
         memset(boulder, 0, sizeof *boulder);
         boulder->body.x = enemy->body.x;
@@ -1555,9 +1437,7 @@ static void spawn_pickup(BBGame *game, const BBEnemy *enemy)
     {
         BBPickup *pickup = &game->pickups[i];
         if(pickup->active)
-        {
             continue;
-        }
         if(game->pickup_cursor >= BB_PICKUP_TYPE_COUNT)
         {
             shuffle_pickups(game);
@@ -1578,16 +1458,12 @@ static void spawn_pickup(BBGame *game, const BBEnemy *enemy)
 static void update_enemy(BBGame *game, BBEnemy *enemy, int index, float dt)
 {
     if(!enemy->active || enemy->state == BB_ENEMY_CAPTURED)
-    {
         return;
-    }
     enemy->age += dt;
     if(enemy->state == BB_ENEMY_SPAWNING)
     {
         if(enemy->age <= enemy->spawn_delay)
-        {
             return;
-        }
         float progress = clamp((enemy->age - enemy->spawn_delay) / 2.0f, 0.0f, 1.0f);
         /* 원본 맵의 위쪽에서 2초 동안 지정 높이까지 내려온다. 시작점과
          * 목표점에 같은 오프셋을 써서 크기 변경 중에도 등장 위치가 이어진다. */
@@ -1733,9 +1609,7 @@ static void update_enemy(BBGame *game, BBEnemy *enemy, int index, float dt)
 static void pop_bubble(BBGame *game, BBBubble *bubble, bool release)
 {
     if(bubble->popping)
-    {
         return;
-    }
     bubble->popping = true;
     bubble->releasing = release;
     bubble->pop_timer = 0.25f;
@@ -1789,9 +1663,7 @@ static void finish_pop(BBGame *game, BBBubble *bubble)
 static void update_bubble(BBGame *game, BBBubble *bubble, float dt, float center_x, float center_y)
 {
     if(!bubble->active)
-    {
         return;
-    }
     if(bubble->popping)
     {
         bubble->pop_timer -= dt;
@@ -1857,9 +1729,7 @@ static void update_bubble(BBGame *game, BBBubble *bubble, float dt, float center
 static void update_boulder(BBGame *game, BBBoulder *boulder, float dt)
 {
     if(!boulder->active)
-    {
         return;
-    }
     boulder->age += dt;
     if(boulder->age >= 3.0f)
     {
@@ -1885,9 +1755,7 @@ static void update_boulder(BBGame *game, BBBoulder *boulder, float dt)
 static void update_pickup(BBGame *game, BBPickup *pickup, float dt)
 {
     if(!pickup->active)
-    {
         return;
-    }
     pickup->age += dt;
     if(pickup->age >= 10.0f)
     {
@@ -1921,46 +1789,36 @@ static void revive_player(BBGame *game, int index)
 static void check_rescue_bump(BBGame *game)
 {
     if(game->player_count != 2)
-    {
         return;
-    }
     for(int target = 0; target < game->player_count; ++target)
     {
         BBPlayer *waiting = &game->players[target];
         if(!waiting->active || waiting->state != BB_PLAYER_BUBBLE)
-        {
             continue;
-        }
-        for(int p = 0; p < game->player_count; ++p)
+        /* 2인 모드이므로 0번의 동료는 1번, 1번의 동료는 0번이다. */
+        int teammate = 1 - target;
+        const BBPlayer *rescuer = &game->players[teammate];
+        if(!rescuer->active || rescuer->state != BB_PLAYER_NORMAL || rescuer->lives <= 0)
+            continue;
+        bool rescued = circles_overlap(&waiting->body, BB_RESCUE_BUBBLE_RADIUS, &rescuer->body, 0.95f);
+        if(!rescued)
         {
-            const BBPlayer *rescuer = &game->players[p];
-            if(p == target || !rescuer->active || rescuer->state != BB_PLAYER_NORMAL || rescuer->lives <= 0)
+            for(int b = 0; b < BB_MAX_BUBBLES; ++b)
             {
-                continue;
-            }
-            bool rescued = circles_overlap(&waiting->body, BB_RESCUE_BUBBLE_RADIUS, &rescuer->body, 0.95f);
-            if(!rescued)
-            {
-                for(int b = 0; b < BB_MAX_BUBBLES; ++b)
+                BBBubble *bubble = &game->bubbles[b];
+                if(!bubble->active || bubble->popping || bubble->captured_enemy >= 0 || bubble->owner != teammate)
+                    continue;
+                if(circles_overlap(&waiting->body, BB_RESCUE_BUBBLE_RADIUS, &bubble->body, 0.75f))
                 {
-                    BBBubble *bubble = &game->bubbles[b];
-                    if(!bubble->active || bubble->popping || bubble->captured_enemy >= 0 || bubble->owner != p)
-                    {
-                        continue;
-                    }
-                    if(circles_overlap(&waiting->body, BB_RESCUE_BUBBLE_RADIUS, &bubble->body, 0.75f))
-                    {
-                        pop_bubble(game, bubble, false);
-                        rescued = true;
-                        break;
-                    }
+                    pop_bubble(game, bubble, false);
+                    rescued = true;
+                    break;
                 }
             }
-            if(rescued)
-            {
-                revive_player(game, target);
-                break;
-            }
+        }
+        if(rescued)
+        {
+            revive_player(game, target);
         }
     }
 }
@@ -1973,9 +1831,7 @@ static void check_bubble_bump(BBGame *game)
     {
         BBBubble *bubble = &game->bubbles[b];
         if(!bubble->active || bubble->popping)
-        {
             continue;
-        }
         if(bubble->captured_enemy < 0)
         {
             /* 비어 있는 거품 하나는 적 하나만 포획한다. CAPTURED로 즉시 바꾸면
@@ -1997,9 +1853,7 @@ static void check_bubble_bump(BBGame *game)
         }
         /* 발사 직후에는 어느 플레이어도 버블을 곧바로 터뜨리지 못하게 한다. */
         if(bubble->age < 1.0f)
-        {
             continue;
-        }
         for(int p = 0; p < BB_MAX_PLAYERS; ++p)
         {
             BBPlayer *player = &game->players[p];
@@ -2033,9 +1887,7 @@ static void check_boulder_bump(BBGame *game)
     {
         BBBoulder *boulder = &game->boulders[b];
         if(!boulder->active)
-        {
             continue;
-        }
         for(int p = 0; p < BB_MAX_PLAYERS; ++p)
             if(circles_overlap(&boulder->body, 0.75f, &game->players[p].body, 0.95f))
             {
@@ -2052,9 +1904,7 @@ static void check_pickup_bump(BBGame *game)
     {
         BBPickup *pickup = &game->pickups[i];
         if(!pickup->active)
-        {
             continue;
-        }
         for(int p = 0; p < BB_MAX_PLAYERS; ++p)
         {
             BBPlayer *player = &game->players[p];
@@ -2064,6 +1914,18 @@ static void check_pickup_bump(BBGame *game)
                 player->score += bb_game_pickup_score(pickup->type);
                 pickup->active = false;
                 game->events.pickup = true;
+                game->round_pickups_collected++;
+                /* 적 한 마리마다 음식 하나가 나온다. 화면을 넓혀 추가된 적까지
+                 * 모두 처치하고 그만큼 실제로 먹었을 때만 보너스를 준다.
+                 * 시간이 지나 사라진 음식과 아직 생성되지 않은 음식은 포함하지 않는다.
+                 * 2인 모드는 합산하여 세고 마지막 음식을 먹은 사람에게 한 번 지급한다. */
+                if(!game->round_pickup_bonus_awarded && game->round_enemy_quota > 0 &&
+                   game->round_pickups_collected == game->round_enemy_quota &&
+                   bb_game_enemies_left(game) == 0)
+                {
+                    player->score += BB_ALL_PICKUPS_BONUS;
+                    game->round_pickup_bonus_awarded = true;
+                }
                 break;
             }
         }
@@ -2081,9 +1943,7 @@ static void check_collisions_and_progress(BBGame *game)
     {
         BBEnemy *enemy = &game->enemies[e];
         if(!enemy->active || enemy->state == BB_ENEMY_SPAWNING || enemy->state == BB_ENEMY_CAPTURED || enemy->state == BB_ENEMY_DEAD)
-        {
             continue;
-        }
         for(int p = 0; p < BB_MAX_PLAYERS; ++p)
             if(rects_overlap(&enemy->body, 0.9f, 0.95f,
                              &game->players[p].body, 0.9f, 0.975f))
@@ -2098,9 +1958,7 @@ static void check_collisions_and_progress(BBGame *game)
      * 아니다. 모두 버블/탈락 상태가 되면 서로를 구할 수 없어 게임을 끝낸다. */
     for(int i = 0; i < game->player_count; ++i) {
         if(!game->players[i].active)
-        {
             continue;
-        }
         if(game->players[i].state == BB_PLAYER_NORMAL || game->players[i].state == BB_PLAYER_DEAD)
         {
             living_player = true;
@@ -2125,9 +1983,7 @@ static void check_collisions_and_progress(BBGame *game)
     /* 마지막 피격의 사망 그림이 끝날 때까지 기다린다.
      * 이때 다음 라운드나 승리로 넘어가면 목숨 0인 플레이어가 되살아난다. */
     if(!has_lives)
-    {
         return;
-    }
     /* 클리어 대기 중에도 아이템을 먹을 수 있도록 전환은 충돌 처리 뒤에 한다. */
     if(game->state == BB_STATE_PLAY && bb_game_enemies_left(game) == 0)
     {
@@ -2153,7 +2009,6 @@ static void check_collisions_and_progress(BBGame *game)
  * 틱 수와 사건 초기화는 공개 진입점에서 한 번만 처리해 여러 단계의 사건을 모은다. */
 static void step_game(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float dt)
 {
-    BBInput neutral = {0};
     game->state_time += dt;
     if(game->state == BB_STATE_INTRO)
     {
@@ -2199,7 +2054,7 @@ static void step_game(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float 
         }
     for(int i = 0; i < game->player_count; ++i)
     {
-        BBInput input = neutral;
+        BBInput input = {0};
         if(inputs != NULL)
         {
             input = inputs[i];
@@ -2252,18 +2107,11 @@ static void step_game(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float 
 void bb_game_update(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float dt)
 {
     if(game == NULL)
-    {
         return;
-    }
     memset(&game->events, 0, sizeof game->events);
-    if(!isfinite(dt) || dt <= 0.0f || dt > (1.0f / 30.0f))
-    {
+    if(!isfinite(dt) || dt <= 0.0f || dt > (1.0f / 30.0f) ||
+       game->state == BB_STATE_MENU || game->state == BB_STATE_SCORE)
         return;
-    }
-    if(game->state == BB_STATE_MENU || game->state == BB_STATE_SCORE)
-    {
-        return;
-    }
     ++game->ticks;
     int steps = 1;
     if(game->world_width > BB_MAP_WIDTH && dt > BB_FIXED_DT)
@@ -2295,8 +2143,6 @@ void bb_game_update(BBGame *game, const BBInput inputs[BB_MAX_PLAYERS], float dt
             step_game(game, held_inputs, elapsed);
         }
         if(game->state == BB_STATE_MENU || game->state == BB_STATE_SCORE)
-        {
             break;
-        }
     }
 }
