@@ -3,6 +3,7 @@
 #include "bb_render.h"
 #include "bb_levels.h"
 #include "bb_raylib_types.h"
+#include "rlgl.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -946,6 +947,37 @@ static void rescue_labels(const BBAssets *assets, const BBGame *game, const BBVi
         DrawRectangleRec(bb_rectangle(x - 1, y - 1, width + 2, 10), BLACK);
         text(assets, label, x, y, player_colors[i]);
     }
+}
+
+/* 완성된 캔버스를 창에 출력한다. raylib 5.5의 Windows 고해상도 창은
+ * 크기 변경 뒤에도 BeginDrawing에서 DPI 확대 행렬을 적용할 수 있다.
+ * 캔버스는 이미 실제 픽셀 크기이므로, 아래 세 좌표 설정을 모두 맞춘다.
+ * 1. viewport: 실제로 그릴 화면의 픽셀 범위
+ * 2. projection: 좌표 (0, 0)~(너비, 높이)를 그 범위에 대응시킴
+ * 3. modelview: 추가 확대·이동을 하지 않음
+ * macOS의 논리 좌표와 Retina 픽셀 차이도 같은 경로에서 처리한다. */
+void bb_present_canvas(RenderTexture2D canvas, int framebuffer_width, int framebuffer_height)
+{
+    if(framebuffer_width <= 0 || framebuffer_height <= 0 || !IsRenderTextureValid(canvas))
+    {
+        return;
+    }
+
+    /* 이전 그림을 먼저 제출해야 행렬을 바꿔도 그 그림의 위치가 달라지지 않는다. */
+    rlDrawRenderBatchActive();
+    rlViewport(0, 0, framebuffer_width, framebuffer_height);
+    rlMatrixMode(RL_PROJECTION);
+    rlLoadIdentity();
+    rlOrtho(0, framebuffer_width, framebuffer_height, 0, 0.0, 1.0);
+    rlMatrixMode(RL_MODELVIEW);
+    rlLoadIdentity();
+
+    /* 렌더 텍스처의 위아래를 뒤집고 화면 전체에 한 번만 복사한다. */
+    DrawTexturePro(canvas.texture,
+                   bb_rectangle(0, 0, (float)canvas.texture.width, -(float)canvas.texture.height),
+                   bb_rectangle(0, 0, (float)framebuffer_width, (float)framebuffer_height),
+                   bb_vector2(0, 0), 0, WHITE);
+    rlDrawRenderBatchActive();
 }
 
 /* 해상도에 맞는 월드와 화면 고정 HUD를 분리해 그린다. 모든 카메라는

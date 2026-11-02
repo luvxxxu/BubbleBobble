@@ -68,6 +68,20 @@ sanitizer 프리셋에는 macOS/Linux의 Clang 또는 GCC가 필요합니다. �
 
 ## 빌드 범위와 재현성
 
+### 전체화면·DPI 출력 검사
+
+`bb_presentation_tests`는 실제 창을 열어 100·125·150·200% 확대, Retina 투영, 창 크기 전환을 검사하는 별도 대상입니다. 화면이 없는 CI에서 실패하지 않도록 기본 빌드·CTest에서는 제외합니다. 픽셀 패턴 전체를 읽어 확대·잘림을 검사하므로 수동으로 화면을 보고 판정할 필요가 없습니다.
+
+```powershell
+cmake --preset windows-x64
+cmake --build --preset windows-x64 --target bb_presentation_tests
+./build/windows-x64/bin/Release/bb_presentation_tests.exe
+```
+
+macOS에서는 `cmake --build --preset macos-arm64 --target bb_presentation_tests` 후 `./build/macos-arm64/bin/bb_presentation_tests`로 실행합니다. 이 검사는 운영체제별 DPI 행렬을 재현하며, 실제 Windows 모니터 전환·F11 동작의 확인과는 구분합니다.
+
+### 구성 요소
+
 - `bb_core`는 그래픽에 의존하지 않는 C11 정적 라이브러리이며 `bb_game_tests`와 `bb_level_tests`가 CTest로 검사합니다. `bb_platform_tests`는 빌드 디렉터리 안의 전용 임시 파일로 경로·UTF-8 파일 열기와 순위표 정렬·파싱·안전한 저장을 검사합니다. 데스크톱 빌드의 `desktop_assets` 테스트는 실제 raylib 경로로 이미지와 WAV·OGG를 장치 없이 디코딩하고 글꼴 파일의 존재를 검사합니다.
 - `BubbleBobble`은 `main.c`, `bb_render.c`, `bb_platform.c`, `bb_raylib_types.c`, `bb_core`로 구성됩니다. 플랫폼 통합은 `bb_platform.h` 뒤에 둡니다. 게임 규칙과 충돌 판정은 `bb_game.c`의 일반 C 함수로 처리하며, 화면·입력·오디오는 raylib을 사용합니다.
 - `cmake/PureCRaylib.cmake`는 내려받은 raylib 루트의 한정되지 않은 `project(raylib)`를 `project(raylib LANGUAGES C)`로 바꿉니다. 이는 CMake가 불필요하게 C++ 컴파일러를 탐색하지 않게 할 뿐 의존성 구현은 바꾸지 않습니다. 패치는 변경 전 기대한 소스인지 검증합니다.

@@ -48,6 +48,9 @@ void bb_assets_unload(BBAssets *assets);
 /* 순서도의 DrawGame 단계: 맵, 객체, UI를 이 순서로 그린다. */
 void bb_draw_game(const BBAssets *assets, const BBGame *game, const BBUI *ui,
                   const BBViewport *viewport, int framebuffer_width, int framebuffer_height);
+/* BeginDrawing/EndDrawing 사이의 마지막 작업으로 호출한다. 완성된 캔버스를
+ * DPI 중복 확대 없이 실제 창 프레임버퍼의 모든 픽셀에 맞춰 출력한다. */
+void bb_present_canvas(RenderTexture2D canvas, int framebuffer_width, int framebuffer_height);
 /* 이번 갱신의 사건에 해당하는 효과음을 한 번씩 재생한다. */
 void bb_audio_events(const BBAssets *assets, BBEvents events);
 

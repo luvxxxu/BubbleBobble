@@ -670,15 +670,11 @@ static int run_game(int argc, char **argv)
         BeginTextureMode(canvas);
         bb_draw_game(&assets, &game, &ui, &viewport, framebuffer_width, framebuffer_height);
         EndTextureMode();
-        /* 캔버스는 이미 출력과 같은 해상도다. 논리 창 좌표로 복사하면
-         * 고해상도 디스플레이에서도 실제 출력 픽셀과 텍스처 픽셀이 일치한다. */
-        float width = (float)window_width, height = (float)window_height;
+        /* 완성된 캔버스는 실제 출력 픽셀에 한 번만 맞춰 복사한다.
+         * Windows 전체화면 전환 뒤 남은 DPI 배율을 다시 적용하지 않는다. */
         BeginDrawing();
         ClearBackground(bb_color(12, 12, 12, 255));
-        /* raylib 렌더 텍스처는 표시할 때 세로 방향을 뒤집어야 한다. */
-        DrawTexturePro(canvas.texture, bb_rectangle(0, 0, (float)canvas.texture.width, -(float)canvas.texture.height),
-                       bb_rectangle(0, 0, width, height),
-                       bb_vector2(0, 0), 0, WHITE);
+        bb_present_canvas(canvas, framebuffer_width, framebuffer_height);
         EndDrawing();
         /* 스크린샷은 자동 실행의 마지막 장 또는 일반 실행의 첫 장을 한 번 저장한다. */
         ++frames;

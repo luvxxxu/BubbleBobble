@@ -167,6 +167,18 @@ if(BB_BUILD_GAME)
     if(BUILD_TESTING)
         # 실제 raylib 경로로 이미지와 오디오를 장치 없이 디코딩한다.
         add_test(NAME desktop_assets COMMAND BubbleBobble --validate-assets)
+        # 실제 창이 필요한 DPI 출력 검사는 명시적으로 빌드/실행한다.
+        # 화면 장치가 없는 CI의 기본 CTest에는 넣지 않는다.
+        add_executable(bb_presentation_tests EXCLUDE_FROM_ALL
+            tests/test_presentation.c src/bb_render.c src/bb_platform.c src/bb_raylib_types.c)
+        target_link_libraries(bb_presentation_tests PRIVATE bb_core raylib)
+        bb_configure_c_target(bb_presentation_tests)
+        if(WIN32)
+            target_link_libraries(bb_presentation_tests PRIVATE shell32)
+        endif()
+        if(UNIX AND NOT APPLE)
+            target_compile_definitions(bb_presentation_tests PRIVATE _POSIX_C_SOURCE=200809L)
+        endif()
     endif()
     # 설치/배포 결과에서도 실행 파일 옆에 assets를 두어 개발 빌드와 경로 규칙을 맞춘다.
     install(TARGETS BubbleBobble RUNTIME DESTINATION bin)
